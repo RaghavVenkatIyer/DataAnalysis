@@ -1,0 +1,855 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orbital Decay Visualizer · OMM/TLE</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #07090f;
+    --bg-card: #0f1320;
+    --bg-card-2: #141a2c;
+    --line: #1e2640;
+    --muted: #8d9bb5;
+    --text: #e7ecf6;
+    --accent: #ff8a3d;
+    --accent2: #4fc3f7;
+    --good: #6ddfa1;
+    --warn: #ffb84d;
+    --bad:  #ff6e6e;
+    --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1100px 600px at 80% -10%, #1b1330 0%, transparent 60%),
+                radial-gradient(900px 500px at -10% 110%, #0a1a2a 0%, transparent 60%),
+                var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 24px 24px 64px; }
+
+  /* ---------- Loader bar ---------- */
+  .loader {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 14px;
+    background: rgba(15, 19, 32, 0.88);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--line); border-radius: 12px;
+    margin-bottom: 22px;
+  }
+  .loader.dragover { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255,138,61,0.15); }
+  .loader .badge {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    color: var(--accent); text-transform: uppercase;
+    padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px;
+    background: #131a2c;
+  }
+  .loader .loader-msg {
+    flex: 1; color: var(--muted); font-size: 13px;
+  }
+  .loader .loader-msg b { color: var(--text); }
+  .loader .loader-msg .err { color: var(--bad); }
+  .btn {
+    appearance: none; -webkit-appearance: none; cursor: pointer;
+    background: linear-gradient(180deg, #1b223b 0%, #131a2c 100%);
+    color: var(--text); border: 1px solid var(--line); border-radius: 10px;
+    padding: 8px 14px; font-family: var(--mono); font-size: 12px;
+    letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .btn:hover { border-color: var(--accent2); color: var(--accent2); }
+  .btn.primary { background: linear-gradient(180deg, #ff8a3d 0%, #d96a1f 100%); border-color: transparent; color: #1a0d00; }
+  .btn.primary:hover { color: #1a0d00; filter: brightness(1.08); }
+  input[type=file] { display: none; }
+
+  header.hero {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 28px;
+    margin-bottom: 28px;
+  }
+  @media (max-width: 900px) { header.hero { grid-template-columns: 1fr; } }
+  .titleblock h1 {
+    font-size: 28px; line-height: 1.2; margin: 6px 0;
+    letter-spacing: -0.01em;
+  }
+  .eyebrow {
+    color: var(--accent); font-family: var(--mono); font-size: 12px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+  }
+  .subtitle { color: var(--muted); font-size: 14px; max-width: 60ch; }
+  .meta-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr);
+    gap: 8px 18px; margin-top: 18px; font-size: 13px;
+  }
+  .meta-grid dt { color: var(--muted); font-family: var(--mono); }
+  .meta-grid dd { margin: 0; font-family: var(--mono); }
+
+  .heroloss {
+    background: linear-gradient(180deg, #11192c 0%, #0d1325 100%);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 22px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 30px 60px -30px rgba(255, 138, 61, 0.18);
+  }
+  .heroloss h2 {
+    font-size: 13px; color: var(--muted); margin: 0 0 8px;
+    text-transform: uppercase; letter-spacing: 0.16em; font-family: var(--mono);
+  }
+  .bignum {
+    font-family: var(--mono); font-size: 42px; font-weight: 600; color: var(--accent);
+    letter-spacing: -0.02em; line-height: 1.05;
+  }
+  .bignum small { color: var(--muted); font-weight: 400; font-size: 14px; margin-left: 6px; letter-spacing: 0; }
+  .heroloss .row {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 16px;
+    border-top: 1px dashed var(--line); padding-top: 14px;
+  }
+  .heroloss .row .stat .k { color: var(--muted); font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; }
+  .heroloss .row .stat .v { font-family: var(--mono); font-size: 18px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 20px;
+  }
+  .card h3 {
+    margin: 0 0 4px; font-size: 14px; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--text);
+    font-family: var(--mono);
+  }
+  .card p.note { margin: 2px 0 14px; color: var(--muted); font-size: 13px; }
+  .chartwrap { position: relative; height: 260px; }
+
+  .computation {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px 24px;
+    margin-top: 22px;
+  }
+  .computation h2 { margin: 0 0 4px; font-size: 18px; }
+  .computation .lead { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .steps { counter-reset: step; list-style: none; padding: 0; margin: 0; }
+  .steps > li {
+    counter-increment: step;
+    position: relative;
+    padding: 14px 16px 14px 56px;
+    border-top: 1px solid var(--line);
+    font-size: 14px;
+  }
+  .steps > li::before {
+    content: counter(step);
+    position: absolute; left: 16px; top: 16px;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #1b223b; color: var(--accent2);
+    display: grid; place-items: center;
+    font-family: var(--mono); font-size: 13px;
+    border: 1px solid var(--line);
+  }
+  .steps > li .label { font-weight: 600; }
+  .steps > li .formula {
+    font-family: var(--mono); color: var(--accent2);
+    background: #0b1224; padding: 8px 12px; border-radius: 8px;
+    border: 1px solid var(--line); display: inline-block; margin: 8px 0;
+    font-size: 13px;
+  }
+  .steps > li .sub { color: var(--muted); font-size: 13px; }
+
+  table.kv { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
+  table.kv th, table.kv td { text-align: left; padding: 6px 8px; border-bottom: 1px dashed var(--line); }
+  table.kv th { color: var(--muted); font-weight: 400; }
+  table.kv td.num { text-align: right; }
+
+  .footer {
+    margin-top: 28px; color: var(--muted); font-size: 12px;
+    border-top: 1px solid var(--line); padding-top: 16px;
+  }
+  .footer code { font-family: var(--mono); color: var(--accent2); }
+
+  .chip {
+    display: inline-block; padding: 3px 8px; border-radius: 999px;
+    background: #1a2240; color: var(--accent2); font-family: var(--mono);
+    font-size: 11px; letter-spacing: 0.08em;
+    border: 1px solid var(--line); margin-right: 6px;
+  }
+  .massctrl {
+    display:flex; align-items:center; gap:10px;
+    margin-top: 4px; font-family: var(--mono); font-size: 12px;
+    color: var(--muted);
+  }
+  .massctrl input[type=number] {
+    width: 90px; background: #0b1224; color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 4px 6px; font-family: var(--mono); font-size: 12px;
+  }
+
+  .controls { display:flex; align-items:center; gap:14px; margin-top: 20px;
+    background: var(--bg-card); border:1px solid var(--line); padding: 14px 18px; border-radius: 14px;}
+  .controls label { color: var(--muted); font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; }
+  .controls input[type=range] { flex: 1; accent-color: var(--accent); }
+  .controls .epoch { font-family: var(--mono); color: var(--accent2); min-width: 22ch; text-align:right; font-size:12px; }
+
+  .empty {
+    padding: 48px; text-align: center; color: var(--muted);
+    border: 1px dashed var(--line); border-radius: 14px; background: var(--bg-card);
+    margin-bottom: 22px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="loader" id="loader">
+    <span class="badge">OMM JSON</span>
+    <div class="loader-msg" id="loader_msg">
+      Drop a Space-Track-style JSON anywhere on the page, or pick a file.
+      <b id="loader_state">Showing demo: COTS-1 Falcon 9 R/B (NORAD 37253).</b>
+    </div>
+    <button class="btn" id="reset_btn">Reset to demo</button>
+    <label for="file_input" class="btn primary">Load JSON…</label>
+    <input id="file_input" type="file" accept=".json,application/json">
+  </div>
+
+  <header class="hero">
+    <div class="titleblock">
+      <div class="eyebrow" id="m_eyebrow">Atmospheric Decay · OMM Series</div>
+      <h1 id="m_title">Orbital decay visualizer</h1>
+      <p class="subtitle" id="m_subtitle">
+        Shows how Earth's residual atmosphere is bleeding orbital energy out of
+        the loaded object. Apogee, perigee, semi-major axis, eccentricity,
+        period, BSTAR drag term and specific orbital energy are all computed
+        from the SGP4 mean elements in the JSON.
+      </p>
+      <dl class="meta-grid">
+        <dt>Object name</dt><dd id="m_name">–</dd>
+        <dt>NORAD ID</dt><dd id="m_norad">–</dd>
+        <dt>COSPAR</dt><dd id="m_cospar">–</dd>
+        <dt>Launch site</dt><dd id="m_site">–</dd>
+        <dt>Launched</dt><dd id="m_launch">–</dd>
+        <dt>Records</dt><dd id="m_count">–</dd>
+        <dt>Span</dt><dd id="m_span">–</dd>
+        <dt>Inclination</dt><dd id="m_inc">–</dd>
+      </dl>
+    </div>
+
+    <aside class="heroloss">
+      <h2>Atmospheric energy loss <span class="chip">window</span><span class="chip" id="m_days">–</span></h2>
+      <div class="bignum" id="hero_eperkg">– <small>kJ kg<sup>-1</sup></small></div>
+      <div class="row">
+        <div class="stat"><div class="k">Δ semi-major axis</div><div class="v" id="hero_da">–</div></div>
+        <div class="stat"><div class="k">Δ apogee altitude</div><div class="v" id="hero_dapo">–</div></div>
+        <div class="stat"><div class="k">Δ perigee altitude</div><div class="v" id="hero_dper">–</div></div>
+        <div class="stat"><div class="k">Δ orbital period</div><div class="v" id="hero_dperiod">–</div></div>
+        <div class="stat"><div class="k">Total energy at <span id="hero_mass_label">3 900</span> kg</div><div class="v" id="hero_etot">–</div></div>
+        <div class="stat"><div class="k">Mean dissipation</div><div class="v" id="hero_pwr">–</div></div>
+      </div>
+      <div class="massctrl">
+        Object dry mass:
+        <input id="mass_input" type="number" min="1" step="10" value="3900">
+        kg
+        <span style="color:var(--muted)">(used only for total-joule scaling; per-kg numbers are mass-independent)</span>
+      </div>
+    </aside>
+  </header>
+
+  <div class="grid">
+    <section class="card">
+      <h3>Apogee &amp; perigee altitude</h3>
+      <p class="note">Drag concentrates at perigee where density is highest. Energy
+        bleed first cuts apogee; perigee barely moves until the orbit is much
+        more circular.</p>
+      <div class="chartwrap"><canvas id="ch_alt"></canvas></div>
+    </section>
+
+    <section class="card">
+      <h3>Semi-major axis a</h3>
+      <p class="note">a sets the orbit's total mechanical energy via
+        ε = -μ/(2a). A monotonic drop in a is direct evidence of energy loss.</p>
+      <div class="chartwrap"><canvas id="ch_a"></canvas></div>
+    </section>
+
+    <section class="card">
+      <h3>Eccentricity e</h3>
+      <p class="note">Apogee falls faster than perigee, so the orbit is becoming
+        less elliptical. Watch e creep down as the orbit circularizes.</p>
+      <div class="chartwrap"><canvas id="ch_e"></canvas></div>
+    </section>
+
+    <section class="card">
+      <h3>Orbital period</h3>
+      <p class="note">A shorter period means a smaller, lower-energy orbit. By
+        Kepler's third law (T² ∝ a³), the period change tracks Δa exactly.</p>
+      <div class="chartwrap"><canvas id="ch_period"></canvas></div>
+    </section>
+
+    <section class="card">
+      <h3>Specific orbital energy ε</h3>
+      <p class="note">Computed at every epoch as ε = -μ/(2a). The slope is the
+        instantaneous power dissipated by drag, per unit mass.</p>
+      <div class="chartwrap"><canvas id="ch_energy"></canvas></div>
+    </section>
+
+    <section class="card">
+      <h3>BSTAR drag term</h3>
+      <p class="note">SGP4's empirical drag coefficient, a proxy for the
+        instantaneous (ρ · C<sub>D</sub> · A / 2m) the propagator infers.
+        Spikes correlate with elevated atmospheric density (geomagnetic activity, solar EUV).</p>
+      <div class="chartwrap"><canvas id="ch_bstar"></canvas></div>
+    </section>
+  </div>
+
+  <div class="controls">
+    <label for="rng">Scrub epoch</label>
+    <input id="rng" type="range" min="0" max="0" step="1" value="0">
+    <div class="epoch" id="epoch_label">–</div>
+  </div>
+
+  <section class="computation">
+    <h2>How the atmospheric loss was computed</h2>
+    <p class="lead">All values come from the loaded OMM/TLE elements. The orbit
+      is two-body Keplerian; every difference between epochs is non-conservative
+      force — overwhelmingly atmospheric drag at low-Earth-orbit altitudes,
+      with negligible solar pressure for a body this dense.</p>
+
+    <ol class="steps">
+      <li>
+        <div class="label">Constants</div>
+        <div class="sub">
+          μ<sub>⊕</sub> = <span style="font-family:var(--mono)">398 600.4418 km³ s⁻²</span> (Earth gravitational parameter, GM)<br>
+          R<sub>⊕</sub> = <span style="font-family:var(--mono)">6 378.137 km</span> (equatorial radius, WGS-84)
+        </div>
+      </li>
+      <li>
+        <div class="label">Specific orbital energy</div>
+        <div class="formula">ε = -μ ⁄ (2 a)</div>
+        <div class="sub">From the vis-viva equation. Units: km² s⁻² ≡ MJ kg⁻¹.
+          Energy is per unit mass, so it doesn't depend on the body's actual mass.</div>
+        <table class="kv" style="margin-top:8px;max-width:520px">
+          <tr><th>at first epoch</th><td class="num" id="t_eps0">–</td><td>MJ kg⁻¹</td></tr>
+          <tr><th>at last epoch</th><td class="num" id="t_eps1">–</td><td>MJ kg⁻¹</td></tr>
+          <tr><th>Δε (specific)</th><td class="num" id="t_deps">–</td><td>kJ kg⁻¹</td></tr>
+        </table>
+      </li>
+      <li>
+        <div class="label">Total energy lost (at chosen mass)</div>
+        <div class="formula">ΔE<sub>tot</sub> = m · |Δε|</div>
+        <div class="sub">Adjust mass in the hero panel; bracketed below for ±20 %.</div>
+        <table class="kv" style="margin-top:8px;max-width:520px">
+          <tr><th>m = <span id="t_m_lo">–</span> kg (low, –20 %)</th><td class="num" id="t_etot_lo">–</td><td>MJ</td></tr>
+          <tr><th>m = <span id="t_m_nom">–</span> kg (chosen)</th><td class="num" id="t_etot">–</td><td>MJ</td></tr>
+          <tr><th>m = <span id="t_m_hi">–</span> kg (high, +20 %)</th><td class="num" id="t_etot_hi">–</td><td>MJ</td></tr>
+          <tr><th>chosen, in kWh</th><td class="num" id="t_kwh">–</td><td>kWh</td></tr>
+        </table>
+      </li>
+      <li>
+        <div class="label">Average power dissipated by drag</div>
+        <div class="formula">P̄ = ΔE<sub>tot</sub> ⁄ Δt</div>
+        <div class="sub">A continuous-equivalent rate. Real drag is impulsive
+          near each perigee pass and ~zero at apogee.</div>
+        <table class="kv" style="margin-top:8px;max-width:520px">
+          <tr><th>window Δt</th><td class="num" id="t_dt">–</td><td>days</td></tr>
+          <tr><th>P̄ (per kg)</th><td class="num" id="t_pkg">–</td><td>mW kg⁻¹</td></tr>
+          <tr><th>P̄ (chosen mass)</th><td class="num" id="t_pwr">–</td><td>W</td></tr>
+        </table>
+      </li>
+      <li>
+        <div class="label">Cross-checks</div>
+        <table class="kv" style="margin-top:8px;max-width:680px">
+          <tr><th>Δa from Δ mean motion (Kepler III)</th><td class="num" id="t_dakep">–</td><td>m</td></tr>
+          <tr><th>Δa direct from elements</th><td class="num" id="t_dadir">–</td><td>m</td></tr>
+          <tr><th>Δapogee / Δperigee ratio</th><td class="num" id="t_apratio">–</td><td>(unitless)</td></tr>
+          <tr><th>circularization signature</th><td colspan="2" id="t_signature">–</td></tr>
+        </table>
+      </li>
+      <li>
+        <div class="label">Caveats</div>
+        <div class="sub">
+          (a) SGP4 mean elements absorb perturbations into the &ldquo;mean&rdquo; orbit, so
+          the decay rate plotted here is already smoothed.
+          (b) At LEO altitudes drag dominates; for higher orbits other perturbations matter more.
+          (c) Per-kg numbers above are exact, total joules scale with the mass you set.
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <div class="footer">
+    Source format: Space-Track API OMM records (CCSDS OMM 3.0, SGP4 mean elements). JSON is parsed in-browser, no upload.
+    Required fields per record: <code>EPOCH</code>, <code>SEMIMAJOR_AXIS</code>, <code>ECCENTRICITY</code>, <code>MEAN_MOTION</code>, <code>PERIOD</code>, <code>BSTAR</code>. Optional metadata: <code>OBJECT_NAME</code>, <code>NORAD_CAT_ID</code>, <code>OBJECT_ID</code>, <code>LAUNCH_DATE</code>, <code>SITE</code>, <code>INCLINATION</code>, <code>APOAPSIS</code>, <code>PERIAPSIS</code>.
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  Embedded demo data (Falcon 9 R/B, NORAD 37253, COTS-1)
+// ============================================================
+const DEMO_RECORDS = [{"EPOCH":"2026-05-01T00:00:39.458016","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37416491,"ECCENTRICITY":0.4011103,"INCLINATION":34.5376,"SEMIMAJOR_AXIS":11149.617,"PERIOD":195.276,"APOAPSIS":9243.708,"PERIAPSIS":299.256,"BSTAR":0.00054883,"MEAN_MOTION_DOT":5.707e-05,"REV_AT_EPOCH":38916},{"EPOCH":"2026-05-01T03:15:48.074112","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37418926,"ECCENTRICITY":0.40111024,"INCLINATION":34.5375,"SEMIMAJOR_AXIS":11149.592,"PERIOD":195.276,"APOAPSIS":9243.673,"PERIAPSIS":299.242,"BSTAR":0.00063047277,"MEAN_MOTION_DOT":6.548e-05,"REV_AT_EPOCH":38917},{"EPOCH":"2026-05-01T03:15:48.074112","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37418926,"ECCENTRICITY":0.4011102,"INCLINATION":34.5375,"SEMIMAJOR_AXIS":11149.592,"PERIOD":195.276,"APOAPSIS":9243.673,"PERIAPSIS":299.242,"BSTAR":0.00063047,"MEAN_MOTION_DOT":6.548e-05,"REV_AT_EPOCH":38917},{"EPOCH":"2026-05-01T19:31:31.228896","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37425691,"ECCENTRICITY":0.4011148,"INCLINATION":34.5379,"SEMIMAJOR_AXIS":11149.524,"PERIOD":195.274,"APOAPSIS":9243.628,"PERIAPSIS":299.15,"BSTAR":0.00051068,"MEAN_MOTION_DOT":5.323e-05,"REV_AT_EPOCH":38922},{"EPOCH":"2026-05-01T19:31:31.229760","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37425691,"ECCENTRICITY":0.40111482,"INCLINATION":34.5379,"SEMIMAJOR_AXIS":11149.524,"PERIOD":195.274,"APOAPSIS":9243.629,"PERIAPSIS":299.15,"BSTAR":0.00051067568,"MEAN_MOTION_DOT":5.323e-05,"REV_AT_EPOCH":38922},{"EPOCH":"2026-05-02T02:01:48.582912","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37429359,"ECCENTRICITY":0.4011157,"INCLINATION":34.5385,"SEMIMAJOR_AXIS":11149.487,"PERIOD":195.273,"APOAPSIS":9243.587,"PERIAPSIS":299.118,"BSTAR":0.00054072,"MEAN_MOTION_DOT":5.636e-05,"REV_AT_EPOCH":38924},{"EPOCH":"2026-05-02T15:02:23.371296","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37434733,"ECCENTRICITY":0.40111918,"INCLINATION":34.5385,"SEMIMAJOR_AXIS":11149.433,"PERIOD":195.272,"APOAPSIS":9243.549,"PERIAPSIS":299.047,"BSTAR":0.00048063342,"MEAN_MOTION_DOT":5.022e-05,"REV_AT_EPOCH":38928},{"EPOCH":"2026-05-02T18:17:32.096256","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37436262,"ECCENTRICITY":0.4011215,"INCLINATION":34.5384,"SEMIMAJOR_AXIS":11149.418,"PERIOD":195.271,"APOAPSIS":9243.554,"PERIAPSIS":299.011,"BSTAR":0.00048142,"MEAN_MOTION_DOT":5.033e-05,"REV_AT_EPOCH":38929},{"EPOCH":"2026-05-02T21:32:40.845408","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37437752,"ECCENTRICITY":0.40112107,"INCLINATION":34.5382,"SEMIMAJOR_AXIS":11149.403,"PERIOD":195.271,"APOAPSIS":9243.528,"PERIAPSIS":299.007,"BSTAR":0.000484361,"MEAN_MOTION_DOT":5.063e-05,"REV_AT_EPOCH":38930},{"EPOCH":"2026-05-03T00:47:49.586784","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37439377,"ECCENTRICITY":0.4011234,"INCLINATION":34.5376,"SEMIMAJOR_AXIS":11149.386,"PERIOD":195.27,"APOAPSIS":9243.531,"PERIAPSIS":298.971,"BSTAR":0.00049201,"MEAN_MOTION_DOT":5.145e-05,"REV_AT_EPOCH":38931},{"EPOCH":"2026-05-03T04:02:58.327296","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37441279,"ECCENTRICITY":0.401125,"INCLINATION":34.5375,"SEMIMAJOR_AXIS":11149.367,"PERIOD":195.27,"APOAPSIS":9243.522,"PERIAPSIS":298.942,"BSTAR":0.00051731839,"MEAN_MOTION_DOT":5.409e-05,"REV_AT_EPOCH":38932},{"EPOCH":"2026-05-03T07:18:07.067808","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37442791,"ECCENTRICITY":0.4011267,"INCLINATION":34.5374,"SEMIMAJOR_AXIS":11149.352,"PERIOD":195.269,"APOAPSIS":9243.519,"PERIAPSIS":298.914,"BSTAR":0.00052654,"MEAN_MOTION_DOT":5.507e-05,"REV_AT_EPOCH":38933},{"EPOCH":"2026-05-03T07:18:07.068672","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37442791,"ECCENTRICITY":0.40112669,"INCLINATION":34.5374,"SEMIMAJOR_AXIS":11149.352,"PERIOD":195.269,"APOAPSIS":9243.519,"PERIAPSIS":298.914,"BSTAR":0.00052654291,"MEAN_MOTION_DOT":5.507e-05,"REV_AT_EPOCH":38933},{"EPOCH":"2026-05-03T20:18:42.236352","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37447576,"ECCENTRICITY":0.40113299,"INCLINATION":34.5376,"SEMIMAJOR_AXIS":11149.304,"PERIOD":195.268,"APOAPSIS":9243.522,"PERIAPSIS":298.815,"BSTAR":0.00047533629,"MEAN_MOTION_DOT":4.985e-05,"REV_AT_EPOCH":38937},{"EPOCH":"2026-05-03T20:18:42.236352","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37447576,"ECCENTRICITY":0.401133,"INCLINATION":34.5376,"SEMIMAJOR_AXIS":11149.304,"PERIOD":195.268,"APOAPSIS":9243.522,"PERIAPSIS":298.815,"BSTAR":0.00047534,"MEAN_MOTION_DOT":4.985e-05,"REV_AT_EPOCH":38937},{"EPOCH":"2026-05-04T02:48:59.853888","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37450479,"ECCENTRICITY":0.4011373,"INCLINATION":34.5374,"SEMIMAJOR_AXIS":11149.274,"PERIOD":195.267,"APOAPSIS":9243.529,"PERIAPSIS":298.75,"BSTAR":0.00046588,"MEAN_MOTION_DOT":4.892e-05,"REV_AT_EPOCH":38939},{"EPOCH":"2026-05-04T15:49:35.222880","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37455912,"ECCENTRICITY":0.40114305,"INCLINATION":34.5373,"SEMIMAJOR_AXIS":11149.22,"PERIOD":195.266,"APOAPSIS":9243.516,"PERIAPSIS":298.653,"BSTAR":0.00048526697,"MEAN_MOTION_DOT":5.1e-05,"REV_AT_EPOCH":38943},{"EPOCH":"2026-05-04T19:04:44.137056","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.3745666,"ECCENTRICITY":0.4011451,"INCLINATION":34.5374,"SEMIMAJOR_AXIS":11149.212,"PERIOD":195.266,"APOAPSIS":9243.529,"PERIAPSIS":298.625,"BSTAR":0.00046354,"MEAN_MOTION_DOT":4.877e-05,"REV_AT_EPOCH":38944},{"EPOCH":"2026-05-05T01:35:01.891104","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37459469,"ECCENTRICITY":0.40114944,"INCLINATION":34.5372,"SEMIMAJOR_AXIS":11149.184,"PERIOD":195.265,"APOAPSIS":9243.537,"PERIAPSIS":298.56,"BSTAR":0.00045937034,"MEAN_MOTION_DOT":4.838e-05,"REV_AT_EPOCH":38946},{"EPOCH":"2026-05-05T01:35:01.891104","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37459469,"ECCENTRICITY":0.4011494,"INCLINATION":34.5372,"SEMIMAJOR_AXIS":11149.184,"PERIOD":195.265,"APOAPSIS":9243.537,"PERIAPSIS":298.56,"BSTAR":0.00045937,"MEAN_MOTION_DOT":4.838e-05,"REV_AT_EPOCH":38946},{"EPOCH":"2026-05-05T17:50:46.167360","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37469024,"ECCENTRICITY":0.4011532,"INCLINATION":34.5371,"SEMIMAJOR_AXIS":11149.087,"PERIOD":195.262,"APOAPSIS":9243.444,"PERIAPSIS":298.46,"BSTAR":0.00054368,"MEAN_MOTION_DOT":5.724e-05,"REV_AT_EPOCH":38951},{"EPOCH":"2026-05-05T21:05:55.023648","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37470483,"ECCENTRICITY":0.40115457,"INCLINATION":34.5369,"SEMIMAJOR_AXIS":11149.073,"PERIOD":195.262,"APOAPSIS":9243.439,"PERIAPSIS":298.436,"BSTAR":0.00050895867,"MEAN_MOTION_DOT":5.364e-05,"REV_AT_EPOCH":38952},{"EPOCH":"2026-05-06T00:21:03.905856","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.3747198,"ECCENTRICITY":0.4011564,"INCLINATION":34.5369,"SEMIMAJOR_AXIS":11149.058,"PERIOD":195.262,"APOAPSIS":9243.438,"PERIAPSIS":298.407,"BSTAR":0.0004953,"MEAN_MOTION_DOT":5.224e-05,"REV_AT_EPOCH":38953},{"EPOCH":"2026-05-06T00:21:03.906720","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.3747198,"ECCENTRICITY":0.40115641,"INCLINATION":34.5369,"SEMIMAJOR_AXIS":11149.058,"PERIOD":195.262,"APOAPSIS":9243.439,"PERIAPSIS":298.407,"BSTAR":0.00049529654,"MEAN_MOTION_DOT":5.224e-05,"REV_AT_EPOCH":38953},{"EPOCH":"2026-05-06T10:06:30.610368","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37475478,"ECCENTRICITY":0.40115884,"INCLINATION":34.537,"SEMIMAJOR_AXIS":11149.022,"PERIOD":195.261,"APOAPSIS":9243.416,"PERIAPSIS":298.358,"BSTAR":0.00043889695,"MEAN_MOTION_DOT":4.645e-05,"REV_AT_EPOCH":38956},{"EPOCH":"2026-05-06T10:06:30.610368","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37475478,"ECCENTRICITY":0.4011588,"INCLINATION":34.537,"SEMIMAJOR_AXIS":11149.022,"PERIOD":195.261,"APOAPSIS":9243.416,"PERIAPSIS":298.359,"BSTAR":0.0004389,"MEAN_MOTION_DOT":4.645e-05,"REV_AT_EPOCH":38956},{"EPOCH":"2026-05-06T19:51:57.468672","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37477865,"ECCENTRICITY":0.4011618,"INCLINATION":34.5368,"SEMIMAJOR_AXIS":11148.998,"PERIOD":195.26,"APOAPSIS":9243.415,"PERIAPSIS":298.311,"BSTAR":0.00037844,"MEAN_MOTION_DOT":4.017e-05,"REV_AT_EPOCH":38959},{"EPOCH":"2026-05-06T19:51:57.469536","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37477865,"ECCENTRICITY":0.40116181,"INCLINATION":34.5368,"SEMIMAJOR_AXIS":11148.998,"PERIOD":195.26,"APOAPSIS":9243.416,"PERIAPSIS":298.311,"BSTAR":0.00037843651,"MEAN_MOTION_DOT":4.017e-05,"REV_AT_EPOCH":38959},{"EPOCH":"2026-05-07T02:22:15.372192","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37480375,"ECCENTRICITY":0.401164,"INCLINATION":34.5365,"SEMIMAJOR_AXIS":11148.973,"PERIOD":195.259,"APOAPSIS":9243.405,"PERIAPSIS":298.271,"BSTAR":0.00037397738,"MEAN_MOTION_DOT":3.973e-05,"REV_AT_EPOCH":38961},{"EPOCH":"2026-05-07T02:22:15.372192","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37480375,"ECCENTRICITY":0.401164,"INCLINATION":34.5365,"SEMIMAJOR_AXIS":11148.973,"PERIOD":195.259,"APOAPSIS":9243.405,"PERIAPSIS":298.271,"BSTAR":0.00037398,"MEAN_MOTION_DOT":3.973e-05,"REV_AT_EPOCH":38961},{"EPOCH":"2026-05-07T15:22:51.351168","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37484301,"ECCENTRICITY":0.4011651,"INCLINATION":34.5362,"SEMIMAJOR_AXIS":11148.933,"PERIOD":195.258,"APOAPSIS":9243.361,"PERIAPSIS":298.235,"BSTAR":0.00037507,"MEAN_MOTION_DOT":3.986e-05,"REV_AT_EPOCH":38965},{"EPOCH":"2026-05-07T18:38:00.422592","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37484872,"ECCENTRICITY":0.4011661,"INCLINATION":34.5362,"SEMIMAJOR_AXIS":11148.928,"PERIOD":195.258,"APOAPSIS":9243.364,"PERIAPSIS":298.221,"BSTAR":0.00036849,"MEAN_MOTION_DOT":3.918e-05,"REV_AT_EPOCH":38966},{"EPOCH":"2026-05-07T21:53:09.462048","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.3748592,"ECCENTRICITY":0.40116575,"INCLINATION":34.5361,"SEMIMAJOR_AXIS":11148.917,"PERIOD":195.258,"APOAPSIS":9243.346,"PERIAPSIS":298.218,"BSTAR":0.00037669845,"MEAN_MOTION_DOT":4.004e-05,"REV_AT_EPOCH":38967},{"EPOCH":"2026-05-08T01:08:18.494592","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37487371,"ECCENTRICITY":0.4011629,"INCLINATION":34.5361,"SEMIMAJOR_AXIS":11148.902,"PERIOD":195.258,"APOAPSIS":9243.294,"PERIAPSIS":298.241,"BSTAR":0.00039554,"MEAN_MOTION_DOT":4.199e-05,"REV_AT_EPOCH":38968},{"EPOCH":"2026-05-08T01:08:18.495456","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37487371,"ECCENTRICITY":0.40116285,"INCLINATION":34.5361,"SEMIMAJOR_AXIS":11148.902,"PERIOD":195.258,"APOAPSIS":9243.293,"PERIAPSIS":298.242,"BSTAR":0.00039554205,"MEAN_MOTION_DOT":4.199e-05,"REV_AT_EPOCH":38968},{"EPOCH":"2026-05-08T17:24:03.786912","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37493067,"ECCENTRICITY":0.40116,"INCLINATION":34.5356,"SEMIMAJOR_AXIS":11148.845,"PERIOD":195.256,"APOAPSIS":9243.181,"PERIAPSIS":298.239,"BSTAR":0.00040988,"MEAN_MOTION_DOT":4.348e-05,"REV_AT_EPOCH":38973},{"EPOCH":"2026-05-08T20:39:12.840192","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37494651,"ECCENTRICITY":0.40115878,"INCLINATION":34.5354,"SEMIMAJOR_AXIS":11148.829,"PERIOD":195.256,"APOAPSIS":9243.145,"PERIAPSIS":298.243,"BSTAR":0.00043188903,"MEAN_MOTION_DOT":4.578e-05,"REV_AT_EPOCH":38974},{"EPOCH":"2026-05-08T20:39:12.840192","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37494651,"ECCENTRICITY":0.4011588,"INCLINATION":34.5354,"SEMIMAJOR_AXIS":11148.829,"PERIOD":195.256,"APOAPSIS":9243.145,"PERIAPSIS":298.243,"BSTAR":0.00043189,"MEAN_MOTION_DOT":4.578e-05,"REV_AT_EPOCH":38974},{"EPOCH":"2026-05-09T03:09:30.913920","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37497625,"ECCENTRICITY":0.4011556,"INCLINATION":34.5356,"SEMIMAJOR_AXIS":11148.799,"PERIOD":195.255,"APOAPSIS":9243.067,"PERIAPSIS":298.261,"BSTAR":0.00044751,"MEAN_MOTION_DOT":4.74e-05,"REV_AT_EPOCH":38976},{"EPOCH":"2026-05-09T03:09:30.914784","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37497625,"ECCENTRICITY":0.40115565,"INCLINATION":34.5356,"SEMIMAJOR_AXIS":11148.799,"PERIOD":195.255,"APOAPSIS":9243.068,"PERIAPSIS":298.26,"BSTAR":0.00044750627,"MEAN_MOTION_DOT":4.74e-05,"REV_AT_EPOCH":38976},{"EPOCH":"2026-05-09T19:25:16.359168","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37502735,"ECCENTRICITY":0.40114881,"INCLINATION":34.5353,"SEMIMAJOR_AXIS":11148.748,"PERIOD":195.254,"APOAPSIS":9242.919,"PERIAPSIS":298.306,"BSTAR":0.00038521827,"MEAN_MOTION_DOT":4.085e-05,"REV_AT_EPOCH":38981},{"EPOCH":"2026-05-09T19:25:16.359168","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37502735,"ECCENTRICITY":0.4011488,"INCLINATION":34.5353,"SEMIMAJOR_AXIS":11148.748,"PERIOD":195.254,"APOAPSIS":9242.919,"PERIAPSIS":298.306,"BSTAR":0.00038522,"MEAN_MOTION_DOT":4.085e-05,"REV_AT_EPOCH":38981},{"EPOCH":"2026-05-10T01:55:34.553856","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37504729,"ECCENTRICITY":0.4011446,"INCLINATION":34.5352,"SEMIMAJOR_AXIS":11148.728,"PERIOD":195.253,"APOAPSIS":9242.844,"PERIAPSIS":298.341,"BSTAR":0.00036272,"MEAN_MOTION_DOT":3.848e-05,"REV_AT_EPOCH":38983},{"EPOCH":"2026-05-10T01:55:34.554720","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37504729,"ECCENTRICITY":0.40114464,"INCLINATION":34.5352,"SEMIMAJOR_AXIS":11148.728,"PERIOD":195.253,"APOAPSIS":9242.845,"PERIAPSIS":298.34,"BSTAR":0.00036272124,"MEAN_MOTION_DOT":3.848e-05,"REV_AT_EPOCH":38983},{"EPOCH":"2026-05-10T18:11:20.213376","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37509899,"ECCENTRICITY":0.4011349,"INCLINATION":34.5347,"SEMIMAJOR_AXIS":11148.675,"PERIOD":195.252,"APOAPSIS":9242.663,"PERIAPSIS":298.418,"BSTAR":0.00036389,"MEAN_MOTION_DOT":3.849e-05,"REV_AT_EPOCH":38988},{"EPOCH":"2026-05-10T21:26:29.354784","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37510834,"ECCENTRICITY":0.4011308,"INCLINATION":34.5348,"SEMIMAJOR_AXIS":11148.666,"PERIOD":195.251,"APOAPSIS":9242.604,"PERIAPSIS":298.458,"BSTAR":0.0003626751,"MEAN_MOTION_DOT":3.834e-05,"REV_AT_EPOCH":38989},{"EPOCH":"2026-05-11T00:41:38.484096","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.3751217,"ECCENTRICITY":0.4011266,"INCLINATION":34.5346,"SEMIMAJOR_AXIS":11148.653,"PERIOD":195.251,"APOAPSIS":9242.539,"PERIAPSIS":298.496,"BSTAR":0.00037727,"MEAN_MOTION_DOT":3.983e-05,"REV_AT_EPOCH":38990},{"EPOCH":"2026-05-11T00:41:38.484960","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.3751217,"ECCENTRICITY":0.40112661,"INCLINATION":34.5346,"SEMIMAJOR_AXIS":11148.653,"PERIOD":195.251,"APOAPSIS":9242.539,"PERIAPSIS":298.496,"BSTAR":0.00037726602,"MEAN_MOTION_DOT":3.983e-05,"REV_AT_EPOCH":38990},{"EPOCH":"2026-05-11T16:57:24.308640","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.375169,"ECCENTRICITY":0.401115,"INCLINATION":34.5341,"SEMIMAJOR_AXIS":11148.605,"PERIOD":195.25,"APOAPSIS":9242.343,"PERIAPSIS":298.597,"BSTAR":0.00035599,"MEAN_MOTION_DOT":3.755e-05,"REV_AT_EPOCH":38995},{"EPOCH":"2026-05-11T16:57:24.309504","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.375169,"ECCENTRICITY":0.401115,"INCLINATION":34.5341,"SEMIMAJOR_AXIS":11148.605,"PERIOD":195.25,"APOAPSIS":9242.343,"PERIAPSIS":298.597,"BSTAR":0.00035598989,"MEAN_MOTION_DOT":3.755e-05,"REV_AT_EPOCH":38995},{"EPOCH":"2026-05-12T02:42:51.861600","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37519638,"ECCENTRICITY":0.4011047,"INCLINATION":34.5342,"SEMIMAJOR_AXIS":11148.577,"PERIOD":195.249,"APOAPSIS":9242.189,"PERIAPSIS":298.696,"BSTAR":0.00035471,"MEAN_MOTION_DOT":3.736e-05,"REV_AT_EPOCH":38998},{"EPOCH":"2026-05-12T02:42:51.862464","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37519638,"ECCENTRICITY":0.40110467,"INCLINATION":34.5342,"SEMIMAJOR_AXIS":11148.577,"PERIOD":195.249,"APOAPSIS":9242.189,"PERIAPSIS":298.696,"BSTAR":0.00035470867,"MEAN_MOTION_DOT":3.736e-05,"REV_AT_EPOCH":38998},{"EPOCH":"2026-05-12T22:13:47.160192","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37525041,"ECCENTRICITY":0.40108927,"INCLINATION":34.5335,"SEMIMAJOR_AXIS":11148.523,"PERIOD":195.248,"APOAPSIS":9241.941,"PERIAPSIS":298.835,"BSTAR":0.00036267768,"MEAN_MOTION_DOT":3.809e-05,"REV_AT_EPOCH":39004},{"EPOCH":"2026-05-13T01:28:56.380224","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37525554,"ECCENTRICITY":0.40108541,"INCLINATION":34.5335,"SEMIMAJOR_AXIS":11148.518,"PERIOD":195.247,"APOAPSIS":9241.89,"PERIAPSIS":298.875,"BSTAR":0.00034218589,"MEAN_MOTION_DOT":3.594e-05,"REV_AT_EPOCH":39005},{"EPOCH":"2026-05-13T01:28:56.380224","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37525554,"ECCENTRICITY":0.4010854,"INCLINATION":34.5335,"SEMIMAJOR_AXIS":11148.518,"PERIOD":195.247,"APOAPSIS":9241.89,"PERIAPSIS":298.875,"BSTAR":0.00034219,"MEAN_MOTION_DOT":3.594e-05,"REV_AT_EPOCH":39005},{"EPOCH":"2026-05-13T04:44:05.614080","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37526416,"ECCENTRICITY":0.4010829,"INCLINATION":34.5334,"SEMIMAJOR_AXIS":11148.509,"PERIOD":195.247,"APOAPSIS":9241.85,"PERIAPSIS":298.898,"BSTAR":0.00034346,"MEAN_MOTION_DOT":3.606e-05,"REV_AT_EPOCH":39006},{"EPOCH":"2026-05-13T17:44:42.566784","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37530671,"ECCENTRICITY":0.4010735,"INCLINATION":34.5329,"SEMIMAJOR_AXIS":11148.466,"PERIOD":195.246,"APOAPSIS":9241.685,"PERIAPSIS":298.977,"BSTAR":0.00037378,"MEAN_MOTION_DOT":3.914e-05,"REV_AT_EPOCH":39010},{"EPOCH":"2026-05-13T20:59:51.829152","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37531382,"ECCENTRICITY":0.40107088,"INCLINATION":34.5327,"SEMIMAJOR_AXIS":11148.459,"PERIOD":195.246,"APOAPSIS":9241.646,"PERIAPSIS":299.002,"BSTAR":0.00036932224,"MEAN_MOTION_DOT":3.866e-05,"REV_AT_EPOCH":39011},{"EPOCH":"2026-05-13T20:59:51.829152","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37531382,"ECCENTRICITY":0.4010709,"INCLINATION":34.5327,"SEMIMAJOR_AXIS":11148.459,"PERIOD":195.246,"APOAPSIS":9241.646,"PERIAPSIS":299.001,"BSTAR":0.00036932,"MEAN_MOTION_DOT":3.866e-05,"REV_AT_EPOCH":39011},{"EPOCH":"2026-05-14T19:45:56.541312","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37538259,"ECCENTRICITY":0.40105554,"INCLINATION":34.5316,"SEMIMAJOR_AXIS":11148.39,"PERIOD":195.244,"APOAPSIS":9241.378,"PERIAPSIS":299.131,"BSTAR":0.00036735287,"MEAN_MOTION_DOT":3.837e-05,"REV_AT_EPOCH":39018},{"EPOCH":"2026-05-15T02:16:15.072096","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37539229,"ECCENTRICITY":0.40105457,"INCLINATION":34.5315,"SEMIMAJOR_AXIS":11148.38,"PERIOD":195.244,"APOAPSIS":9241.354,"PERIAPSIS":299.136,"BSTAR":0.00032277134,"MEAN_MOTION_DOT":3.376e-05,"REV_AT_EPOCH":39020},{"EPOCH":"2026-05-16T01:02:20.007168","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37545922,"ECCENTRICITY":0.40104676,"INCLINATION":34.5307,"SEMIMAJOR_AXIS":11148.312,"PERIOD":195.242,"APOAPSIS":9241.172,"PERIAPSIS":299.183,"BSTAR":0.00038509248,"MEAN_MOTION_DOT":4.014e-05,"REV_AT_EPOCH":39027},{"EPOCH":"2026-05-16T14:02:57.015168","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37551186,"ECCENTRICITY":0.40104725,"INCLINATION":34.53,"SEMIMAJOR_AXIS":11148.259,"PERIOD":195.241,"APOAPSIS":9241.103,"PERIAPSIS":299.146,"BSTAR":0.00044479725,"MEAN_MOTION_DOT":4.631e-05,"REV_AT_EPOCH":39031},{"EPOCH":"2026-05-16T20:33:15.436224","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37553822,"ECCENTRICITY":0.40104903,"INCLINATION":34.5298,"SEMIMAJOR_AXIS":11148.233,"PERIOD":195.24,"APOAPSIS":9241.086,"PERIAPSIS":299.11,"BSTAR":0.00044111855,"MEAN_MOTION_DOT":4.595e-05,"REV_AT_EPOCH":39033},{"EPOCH":"2026-05-16T20:33:15.436224","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37553822,"ECCENTRICITY":0.401049,"INCLINATION":34.5298,"SEMIMAJOR_AXIS":11148.233,"PERIOD":195.24,"APOAPSIS":9241.085,"PERIAPSIS":299.11,"BSTAR":0.00044112,"MEAN_MOTION_DOT":4.595e-05,"REV_AT_EPOCH":39033},{"EPOCH":"2026-05-16T20:33:15.436224","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37553822,"ECCENTRICITY":0.401049,"INCLINATION":34.5298,"SEMIMAJOR_AXIS":11148.233,"PERIOD":195.24,"APOAPSIS":9241.085,"PERIAPSIS":299.11,"BSTAR":0.00044112,"MEAN_MOTION_DOT":4.595e-05,"REV_AT_EPOCH":39033},{"EPOCH":"2026-05-17T09:33:52.246368","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37558725,"ECCENTRICITY":0.40105221,"INCLINATION":34.5293,"SEMIMAJOR_AXIS":11148.183,"PERIOD":195.239,"APOAPSIS":9241.052,"PERIAPSIS":299.045,"BSTAR":0.00041288628,"MEAN_MOTION_DOT":4.307e-05,"REV_AT_EPOCH":39037},{"EPOCH":"2026-05-17T09:33:52.246368","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37558725,"ECCENTRICITY":0.4010522,"INCLINATION":34.5293,"SEMIMAJOR_AXIS":11148.183,"PERIOD":195.239,"APOAPSIS":9241.052,"PERIAPSIS":299.045,"BSTAR":0.00041289,"MEAN_MOTION_DOT":4.307e-05,"REV_AT_EPOCH":39037},{"EPOCH":"2026-05-17T16:04:10.632864","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37560798,"ECCENTRICITY":0.4010546,"INCLINATION":34.529,"SEMIMAJOR_AXIS":11148.163,"PERIOD":195.238,"APOAPSIS":9241.049,"PERIAPSIS":299.006,"BSTAR":0.00038145,"MEAN_MOTION_DOT":3.985e-05,"REV_AT_EPOCH":39039},{"EPOCH":"2026-05-17T16:04:10.633728","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37560798,"ECCENTRICITY":0.40105462,"INCLINATION":34.529,"SEMIMAJOR_AXIS":11148.163,"PERIOD":195.238,"APOAPSIS":9241.05,"PERIAPSIS":299.005,"BSTAR":0.00038145264,"MEAN_MOTION_DOT":3.985e-05,"REV_AT_EPOCH":39039},{"EPOCH":"2026-05-18T01:49:38.191008","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37563677,"ECCENTRICITY":0.4010624,"INCLINATION":34.5287,"SEMIMAJOR_AXIS":11148.134,"PERIOD":195.237,"APOAPSIS":9241.096,"PERIAPSIS":298.901,"BSTAR":0.00034002,"MEAN_MOTION_DOT":3.562e-05,"REV_AT_EPOCH":39042},{"EPOCH":"2026-05-18T11:35:05.845056","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.3756592,"ECCENTRICITY":0.401066,"INCLINATION":34.5281,"SEMIMAJOR_AXIS":11148.111,"PERIOD":195.237,"APOAPSIS":9241.104,"PERIAPSIS":298.848,"BSTAR":0.00032079,"MEAN_MOTION_DOT":3.366e-05,"REV_AT_EPOCH":39045},{"EPOCH":"2026-05-18T18:05:24.235872","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37567795,"ECCENTRICITY":0.4010694,"INCLINATION":34.528,"SEMIMAJOR_AXIS":11148.092,"PERIOD":195.236,"APOAPSIS":9241.116,"PERIAPSIS":298.798,"BSTAR":0.00032842,"MEAN_MOTION_DOT":3.447e-05,"REV_AT_EPOCH":39047},{"EPOCH":"2026-05-18T21:20:33.404928","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37569246,"ECCENTRICITY":0.40107192,"INCLINATION":34.5277,"SEMIMAJOR_AXIS":11148.077,"PERIOD":195.236,"APOAPSIS":9241.123,"PERIAPSIS":298.762,"BSTAR":0.0003526029,"MEAN_MOTION_DOT":3.699e-05,"REV_AT_EPOCH":39048},{"EPOCH":"2026-05-19T00:35:42.586944","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37570322,"ECCENTRICITY":0.4010756,"INCLINATION":34.5276,"SEMIMAJOR_AXIS":11148.067,"PERIOD":195.236,"APOAPSIS":9241.149,"PERIAPSIS":298.714,"BSTAR":0.0003672,"MEAN_MOTION_DOT":3.853e-05,"REV_AT_EPOCH":39049},{"EPOCH":"2026-05-19T03:50:51.769824","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37570954,"ECCENTRICITY":0.4010787,"INCLINATION":34.5273,"SEMIMAJOR_AXIS":11148.06,"PERIOD":195.235,"APOAPSIS":9241.175,"PERIAPSIS":298.676,"BSTAR":0.00034817,"MEAN_MOTION_DOT":3.658e-05,"REV_AT_EPOCH":39050},{"EPOCH":"2026-05-19T03:50:51.770688","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37570954,"ECCENTRICITY":0.40107872,"INCLINATION":34.5273,"SEMIMAJOR_AXIS":11148.06,"PERIOD":195.235,"APOAPSIS":9241.175,"PERIAPSIS":298.675,"BSTAR":0.00034816704,"MEAN_MOTION_DOT":3.658e-05,"REV_AT_EPOCH":39050},{"EPOCH":"2026-05-19T20:06:37.689408","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37575714,"ECCENTRICITY":0.4010847,"INCLINATION":34.5267,"SEMIMAJOR_AXIS":11148.012,"PERIOD":195.234,"APOAPSIS":9241.174,"PERIAPSIS":298.58,"BSTAR":0.00036504102,"MEAN_MOTION_DOT":3.837e-05,"REV_AT_EPOCH":39055},{"EPOCH":"2026-05-19T20:06:37.689408","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37575714,"ECCENTRICITY":0.4010847,"INCLINATION":34.5267,"SEMIMAJOR_AXIS":11148.012,"PERIOD":195.234,"APOAPSIS":9241.174,"PERIAPSIS":298.58,"BSTAR":0.00036504,"MEAN_MOTION_DOT":3.837e-05,"REV_AT_EPOCH":39055},{"EPOCH":"2026-05-20T02:36:55.999008","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37577845,"ECCENTRICITY":0.40108861,"INCLINATION":34.5265,"SEMIMAJOR_AXIS":11147.991,"PERIOD":195.234,"APOAPSIS":9241.188,"PERIAPSIS":298.524,"BSTAR":0.00036736032,"MEAN_MOTION_DOT":3.864e-05,"REV_AT_EPOCH":39057},{"EPOCH":"2026-05-20T02:36:55.999008","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37577845,"ECCENTRICITY":0.4010886,"INCLINATION":34.5265,"SEMIMAJOR_AXIS":11147.991,"PERIOD":195.234,"APOAPSIS":9241.188,"PERIAPSIS":298.524,"BSTAR":0.00036736,"MEAN_MOTION_DOT":3.864e-05,"REV_AT_EPOCH":39057},{"EPOCH":"2026-05-20T12:22:23.487168","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37580414,"ECCENTRICITY":0.40109166,"INCLINATION":34.526,"SEMIMAJOR_AXIS":11147.965,"PERIOD":195.233,"APOAPSIS":9241.186,"PERIAPSIS":298.474,"BSTAR":0.00034615172,"MEAN_MOTION_DOT":3.646e-05,"REV_AT_EPOCH":39060},{"EPOCH":"2026-05-20T12:22:23.487168","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37580414,"ECCENTRICITY":0.4010917,"INCLINATION":34.526,"SEMIMAJOR_AXIS":11147.965,"PERIOD":195.233,"APOAPSIS":9241.186,"PERIAPSIS":298.474,"BSTAR":0.00034615,"MEAN_MOTION_DOT":3.646e-05,"REV_AT_EPOCH":39060},{"EPOCH":"2026-05-20T22:07:50.882880","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37583641,"ECCENTRICITY":0.40109218,"INCLINATION":34.5259,"SEMIMAJOR_AXIS":11147.932,"PERIOD":195.232,"APOAPSIS":9241.146,"PERIAPSIS":298.449,"BSTAR":0.00034642899,"MEAN_MOTION_DOT":3.649e-05,"REV_AT_EPOCH":39063},{"EPOCH":"2026-05-21T04:38:09.109536","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37586117,"ECCENTRICITY":0.40109341,"INCLINATION":34.526,"SEMIMAJOR_AXIS":11147.907,"PERIOD":195.231,"APOAPSIS":9241.125,"PERIAPSIS":298.42,"BSTAR":0.00035912315,"MEAN_MOTION_DOT":3.783e-05,"REV_AT_EPOCH":39065},{"EPOCH":"2026-05-21T14:23:36.460320","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37588837,"ECCENTRICITY":0.4010932,"INCLINATION":34.5257,"SEMIMAJOR_AXIS":11147.88,"PERIOD":195.231,"APOAPSIS":9241.084,"PERIAPSIS":298.406,"BSTAR":0.00034544387,"MEAN_MOTION_DOT":3.64e-05,"REV_AT_EPOCH":39068},{"EPOCH":"2026-05-21T17:38:45.586176","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37589422,"ECCENTRICITY":0.4010928,"INCLINATION":34.5255,"SEMIMAJOR_AXIS":11147.874,"PERIOD":195.231,"APOAPSIS":9241.071,"PERIAPSIS":298.407,"BSTAR":0.00033139,"MEAN_MOTION_DOT":3.493e-05,"REV_AT_EPOCH":39069},{"EPOCH":"2026-05-21T20:53:54.671424","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37590969,"ECCENTRICITY":0.40109232,"INCLINATION":34.5253,"SEMIMAJOR_AXIS":11147.858,"PERIOD":195.23,"APOAPSIS":9241.044,"PERIAPSIS":298.403,"BSTAR":0.00036176038,"MEAN_MOTION_DOT":3.81e-05,"REV_AT_EPOCH":39070},{"EPOCH":"2026-05-21T20:53:54.671424","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37590969,"ECCENTRICITY":0.4010923,"INCLINATION":34.5253,"SEMIMAJOR_AXIS":11147.859,"PERIOD":195.23,"APOAPSIS":9241.044,"PERIAPSIS":298.403,"BSTAR":0.00036176,"MEAN_MOTION_DOT":3.81e-05,"REV_AT_EPOCH":39070},{"EPOCH":"2026-05-22T03:24:12.823776","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37593518,"ECCENTRICITY":0.40109079,"INCLINATION":34.5249,"SEMIMAJOR_AXIS":11147.833,"PERIOD":195.229,"APOAPSIS":9240.991,"PERIAPSIS":298.405,"BSTAR":0.00039100753,"MEAN_MOTION_DOT":4.114e-05,"REV_AT_EPOCH":39072},{"EPOCH":"2026-05-22T13:09:40.019040","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37596956,"ECCENTRICITY":0.40108826,"INCLINATION":34.5246,"SEMIMAJOR_AXIS":11147.798,"PERIOD":195.229,"APOAPSIS":9240.914,"PERIAPSIS":298.412,"BSTAR":0.00040800813,"MEAN_MOTION_DOT":4.29e-05,"REV_AT_EPOCH":39075},{"EPOCH":"2026-05-22T16:24:49.078368","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37597844,"ECCENTRICITY":0.4010871,"INCLINATION":34.5245,"SEMIMAJOR_AXIS":11147.789,"PERIOD":195.228,"APOAPSIS":9240.889,"PERIAPSIS":298.42,"BSTAR":0.00040023,"MEAN_MOTION_DOT":4.208e-05,"REV_AT_EPOCH":39076},{"EPOCH":"2026-05-22T19:39:58.115232","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37598981,"ECCENTRICITY":0.40108532,"INCLINATION":34.5245,"SEMIMAJOR_AXIS":11147.778,"PERIOD":195.228,"APOAPSIS":9240.853,"PERIAPSIS":298.433,"BSTAR":0.00040080737,"MEAN_MOTION_DOT":4.213e-05,"REV_AT_EPOCH":39077},{"EPOCH":"2026-05-23T11:55:43.044672","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37605968,"ECCENTRICITY":0.4010755,"INCLINATION":34.5234,"SEMIMAJOR_AXIS":11147.707,"PERIOD":195.226,"APOAPSIS":9240.645,"PERIAPSIS":298.5,"BSTAR":0.00042836,"MEAN_MOTION_DOT":4.494e-05,"REV_AT_EPOCH":39082},{"EPOCH":"2026-05-23T18:26:00.928320","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37608851,"ECCENTRICITY":0.4010709,"INCLINATION":34.5233,"SEMIMAJOR_AXIS":11147.678,"PERIOD":195.225,"APOAPSIS":9240.553,"PERIAPSIS":298.534,"BSTAR":0.00043636,"MEAN_MOTION_DOT":4.574e-05,"REV_AT_EPOCH":39084},{"EPOCH":"2026-05-24T00:56:18.754080","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37612023,"ECCENTRICITY":0.4010662,"INCLINATION":34.523,"SEMIMAJOR_AXIS":11147.646,"PERIOD":195.225,"APOAPSIS":9240.456,"PERIAPSIS":298.567,"BSTAR":0.00044561,"MEAN_MOTION_DOT":4.667e-05,"REV_AT_EPOCH":39086},{"EPOCH":"2026-05-24T20:27:11.997216","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37619938,"ECCENTRICITY":0.40104842,"INCLINATION":34.5223,"SEMIMAJOR_AXIS":11147.567,"PERIOD":195.222,"APOAPSIS":9240.146,"PERIAPSIS":298.718,"BSTAR":0.0004923231,"MEAN_MOTION_DOT":5.139e-05,"REV_AT_EPOCH":39092},{"EPOCH":"2026-05-24T23:42:20.832768","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37621473,"ECCENTRICITY":0.4010444,"INCLINATION":34.5217,"SEMIMAJOR_AXIS":11147.551,"PERIOD":195.222,"APOAPSIS":9240.079,"PERIAPSIS":298.753,"BSTAR":0.00051006,"MEAN_MOTION_DOT":5.32e-05,"REV_AT_EPOCH":39093},{"EPOCH":"2026-05-25T12:42:56.066112","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37626089,"ECCENTRICITY":0.40103272,"INCLINATION":34.5215,"SEMIMAJOR_AXIS":11147.505,"PERIOD":195.221,"APOAPSIS":9239.884,"PERIAPSIS":298.856,"BSTAR":0.00049794312,"MEAN_MOTION_DOT":5.185e-05,"REV_AT_EPOCH":39097},{"EPOCH":"2026-05-25T12:42:56.066112","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37626089,"ECCENTRICITY":0.4010327,"INCLINATION":34.5215,"SEMIMAJOR_AXIS":11147.505,"PERIOD":195.221,"APOAPSIS":9239.884,"PERIAPSIS":298.856,"BSTAR":0.00049794,"MEAN_MOTION_DOT":5.185e-05,"REV_AT_EPOCH":39097},{"EPOCH":"2026-05-25T22:28:22.328256","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37629906,"ECCENTRICITY":0.40102152,"INCLINATION":34.521,"SEMIMAJOR_AXIS":11147.466,"PERIOD":195.22,"APOAPSIS":9239.705,"PERIAPSIS":298.957,"BSTAR":0.00047704446,"MEAN_MOTION_DOT":4.96e-05,"REV_AT_EPOCH":39100},{"EPOCH":"2026-05-26T14:44:05.780256","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37637014,"ECCENTRICITY":0.40100669,"INCLINATION":34.5204,"SEMIMAJOR_AXIS":11147.395,"PERIOD":195.218,"APOAPSIS":9239.439,"PERIAPSIS":299.08,"BSTAR":0.00048227512,"MEAN_MOTION_DOT":5.002e-05,"REV_AT_EPOCH":39105},{"EPOCH":"2026-05-26T21:14:23.026272","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37640268,"ECCENTRICITY":0.40099954,"INCLINATION":34.52,"SEMIMAJOR_AXIS":11147.362,"PERIOD":195.217,"APOAPSIS":9239.314,"PERIAPSIS":299.14,"BSTAR":0.00049133833,"MEAN_MOTION_DOT":5.091e-05,"REV_AT_EPOCH":39107},{"EPOCH":"2026-05-27T00:29:31.611264","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37642227,"ECCENTRICITY":0.4009964,"INCLINATION":34.5198,"SEMIMAJOR_AXIS":11147.342,"PERIOD":195.217,"APOAPSIS":9239.251,"PERIAPSIS":299.163,"BSTAR":0.00051762,"MEAN_MOTION_DOT":5.359e-05,"REV_AT_EPOCH":39108},{"EPOCH":"2026-05-27T03:44:40.189344","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37644195,"ECCENTRICITY":0.40099177,"INCLINATION":34.5197,"SEMIMAJOR_AXIS":11147.322,"PERIOD":195.216,"APOAPSIS":9239.172,"PERIAPSIS":299.203,"BSTAR":0.00057034285,"MEAN_MOTION_DOT":5.898e-05,"REV_AT_EPOCH":39109},{"EPOCH":"2026-05-27T03:44:40.189344","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37644195,"ECCENTRICITY":0.4009918,"INCLINATION":34.5197,"SEMIMAJOR_AXIS":11147.322,"PERIOD":195.216,"APOAPSIS":9239.172,"PERIAPSIS":299.202,"BSTAR":0.00057034,"MEAN_MOTION_DOT":5.898e-05,"REV_AT_EPOCH":39109},{"EPOCH":"2026-05-27T13:30:05.853600","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37648177,"ECCENTRICITY":0.40098665,"INCLINATION":34.5193,"SEMIMAJOR_AXIS":11147.282,"PERIOD":195.215,"APOAPSIS":9239.058,"PERIAPSIS":299.236,"BSTAR":0.00054590307,"MEAN_MOTION_DOT":5.643e-05,"REV_AT_EPOCH":39112},{"EPOCH":"2026-05-27T20:00:22.867200","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37651257,"ECCENTRICITY":0.40097923,"INCLINATION":34.5188,"SEMIMAJOR_AXIS":11147.251,"PERIOD":195.214,"APOAPSIS":9238.932,"PERIAPSIS":299.3,"BSTAR":0.00056824995,"MEAN_MOTION_DOT":5.866e-05,"REV_AT_EPOCH":39114},{"EPOCH":"2026-05-27T20:00:22.867200","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37651257,"ECCENTRICITY":0.4009792,"INCLINATION":34.5188,"SEMIMAJOR_AXIS":11147.251,"PERIOD":195.214,"APOAPSIS":9238.932,"PERIAPSIS":299.3,"BSTAR":0.00056825,"MEAN_MOTION_DOT":5.866e-05,"REV_AT_EPOCH":39114},{"EPOCH":"2026-05-28T12:16:05.057760","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37659333,"ECCENTRICITY":0.4009671,"INCLINATION":34.5182,"SEMIMAJOR_AXIS":11147.17,"PERIOD":195.212,"APOAPSIS":9238.683,"PERIAPSIS":299.386,"BSTAR":0.00060987,"MEAN_MOTION_DOT":6.284e-05,"REV_AT_EPOCH":39119},{"EPOCH":"2026-05-28T18:46:21.768960","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37662876,"ECCENTRICITY":0.4009629,"INCLINATION":34.5177,"SEMIMAJOR_AXIS":11147.134,"PERIOD":195.211,"APOAPSIS":9238.586,"PERIAPSIS":299.412,"BSTAR":0.00062265,"MEAN_MOTION_DOT":6.412e-05,"REV_AT_EPOCH":39121},{"EPOCH":"2026-05-28T22:01:30.071424","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37665124,"ECCENTRICITY":0.4009602,"INCLINATION":34.5175,"SEMIMAJOR_AXIS":11147.111,"PERIOD":195.211,"APOAPSIS":9238.524,"PERIAPSIS":299.428,"BSTAR":0.00064304,"MEAN_MOTION_DOT":6.619e-05,"REV_AT_EPOCH":39122},{"EPOCH":"2026-05-29T11:02:03.111072","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37672043,"ECCENTRICITY":0.4009543,"INCLINATION":34.5171,"SEMIMAJOR_AXIS":11147.042,"PERIOD":195.209,"APOAPSIS":9238.361,"PERIAPSIS":299.452,"BSTAR":0.00062513,"MEAN_MOTION_DOT":6.432e-05,"REV_AT_EPOCH":39126},{"EPOCH":"2026-05-29T14:17:11.282208","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37674185,"ECCENTRICITY":0.40095268,"INCLINATION":34.517,"SEMIMAJOR_AXIS":11147.02,"PERIOD":195.208,"APOAPSIS":9238.313,"PERIAPSIS":299.458,"BSTAR":0.00062467926,"MEAN_MOTION_DOT":6.427e-05,"REV_AT_EPOCH":39127},{"EPOCH":"2026-05-29T20:47:27.563136","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.3767868,"ECCENTRICITY":0.40094835,"INCLINATION":34.5166,"SEMIMAJOR_AXIS":11146.975,"PERIOD":195.207,"APOAPSIS":9238.201,"PERIAPSIS":299.479,"BSTAR":0.00066112964,"MEAN_MOTION_DOT":6.798e-05,"REV_AT_EPOCH":39129},{"EPOCH":"2026-05-30T00:02:35.657376","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.3768077,"ECCENTRICITY":0.4009476,"INCLINATION":34.5164,"SEMIMAJOR_AXIS":11146.954,"PERIOD":195.206,"APOAPSIS":9238.163,"PERIAPSIS":299.474,"BSTAR":0.00065804,"MEAN_MOTION_DOT":6.766e-05,"REV_AT_EPOCH":39130},{"EPOCH":"2026-05-30T13:03:07.890912","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.3768751,"ECCENTRICITY":0.4009456,"INCLINATION":34.5163,"SEMIMAJOR_AXIS":11146.886,"PERIOD":195.205,"APOAPSIS":9238.046,"PERIAPSIS":299.456,"BSTAR":0.00062307,"MEAN_MOTION_DOT":6.408e-05,"REV_AT_EPOCH":39134},{"EPOCH":"2026-05-30T13:03:07.891776","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.3768751,"ECCENTRICITY":0.40094556,"INCLINATION":34.5163,"SEMIMAJOR_AXIS":11146.886,"PERIOD":195.205,"APOAPSIS":9238.045,"PERIAPSIS":299.456,"BSTAR":0.00062307304,"MEAN_MOTION_DOT":6.408e-05,"REV_AT_EPOCH":39134},{"EPOCH":"2026-05-30T19:33:23.847840","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37691155,"ECCENTRICITY":0.4009445,"INCLINATION":34.516,"SEMIMAJOR_AXIS":11146.849,"PERIOD":195.204,"APOAPSIS":9237.982,"PERIAPSIS":299.446,"BSTAR":0.00063027,"MEAN_MOTION_DOT":6.482e-05,"REV_AT_EPOCH":39136},{"EPOCH":"2026-05-30T19:33:23.848704","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37691155,"ECCENTRICITY":0.4009445,"INCLINATION":34.516,"SEMIMAJOR_AXIS":11146.849,"PERIOD":195.204,"APOAPSIS":9237.982,"PERIAPSIS":299.446,"BSTAR":0.0006302711,"MEAN_MOTION_DOT":6.482e-05,"REV_AT_EPOCH":39136},{"EPOCH":"2026-05-31T02:03:39.701952","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37695763,"ECCENTRICITY":0.400943,"INCLINATION":34.5157,"SEMIMAJOR_AXIS":11146.803,"PERIOD":195.202,"APOAPSIS":9237.9,"PERIAPSIS":299.435,"BSTAR":0.00072206,"MEAN_MOTION_DOT":7.425e-05,"REV_AT_EPOCH":39138},{"EPOCH":"2026-05-31T11:49:03.330624","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37700641,"ECCENTRICITY":0.4009431,"INCLINATION":34.5155,"SEMIMAJOR_AXIS":11146.754,"PERIOD":195.201,"APOAPSIS":9237.833,"PERIAPSIS":299.405,"BSTAR":0.0006867,"MEAN_MOTION_DOT":7.064e-05,"REV_AT_EPOCH":39141},{"EPOCH":"2026-05-31T18:19:19.005888","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37702699,"ECCENTRICITY":0.4009458,"INCLINATION":34.5153,"SEMIMAJOR_AXIS":11146.733,"PERIOD":195.201,"APOAPSIS":9237.834,"PERIAPSIS":299.362,"BSTAR":0.00059426,"MEAN_MOTION_DOT":6.119e-05,"REV_AT_EPOCH":39143},{"EPOCH":"2026-06-01T00:49:34.509216","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37706758,"ECCENTRICITY":0.40094589,"INCLINATION":34.5149,"SEMIMAJOR_AXIS":11146.692,"PERIOD":195.2,"APOAPSIS":9237.777,"PERIAPSIS":299.337,"BSTAR":0.00061078935,"MEAN_MOTION_DOT":6.291e-05,"REV_AT_EPOCH":39145},{"EPOCH":"2026-06-01T00:49:34.509216","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37706758,"ECCENTRICITY":0.4009459,"INCLINATION":34.5149,"SEMIMAJOR_AXIS":11146.692,"PERIOD":195.2,"APOAPSIS":9237.777,"PERIAPSIS":299.337,"BSTAR":0.00061079,"MEAN_MOTION_DOT":6.291e-05,"REV_AT_EPOCH":39145},{"EPOCH":"2026-06-01T13:50:05.279136","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37713171,"ECCENTRICITY":0.40094867,"INCLINATION":34.5147,"SEMIMAJOR_AXIS":11146.627,"PERIOD":195.198,"APOAPSIS":9237.718,"PERIAPSIS":299.267,"BSTAR":0.00055269533,"MEAN_MOTION_DOT":5.699e-05,"REV_AT_EPOCH":39149},{"EPOCH":"2026-06-01T20:20:20.506848","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37717097,"ECCENTRICITY":0.40095072,"INCLINATION":34.5144,"SEMIMAJOR_AXIS":11146.588,"PERIOD":195.197,"APOAPSIS":9237.685,"PERIAPSIS":299.22,"BSTAR":0.00058164977,"MEAN_MOTION_DOT":6e-05,"REV_AT_EPOCH":39151},{"EPOCH":"2026-06-02T12:35:58.234848","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.3772492,"ECCENTRICITY":0.4009566,"INCLINATION":34.5138,"SEMIMAJOR_AXIS":11146.509,"PERIOD":195.195,"APOAPSIS":9237.64,"PERIAPSIS":299.108,"BSTAR":0.00055757172,"MEAN_MOTION_DOT":5.761e-05,"REV_AT_EPOCH":39156},{"EPOCH":"2026-06-02T19:06:13.130784","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37728869,"ECCENTRICITY":0.4009582,"INCLINATION":34.5137,"SEMIMAJOR_AXIS":11146.469,"PERIOD":195.194,"APOAPSIS":9237.602,"PERIAPSIS":299.066,"BSTAR":0.00060438,"MEAN_MOTION_DOT":6.247e-05,"REV_AT_EPOCH":39158},{"EPOCH":"2026-06-02T19:06:13.131648","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37728869,"ECCENTRICITY":0.40095817,"INCLINATION":34.5137,"SEMIMAJOR_AXIS":11146.469,"PERIOD":195.194,"APOAPSIS":9237.602,"PERIAPSIS":299.066,"BSTAR":0.00060437897,"MEAN_MOTION_DOT":6.247e-05,"REV_AT_EPOCH":39158},{"EPOCH":"2026-06-03T11:21:49.999104","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37737188,"ECCENTRICITY":0.400965,"INCLINATION":34.513,"SEMIMAJOR_AXIS":11146.385,"PERIOD":195.191,"APOAPSIS":9237.561,"PERIAPSIS":298.94,"BSTAR":0.00059666,"MEAN_MOTION_DOT":6.178e-05,"REV_AT_EPOCH":39163},{"EPOCH":"2026-06-03T14:36:57.304512","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37738713,"ECCENTRICITY":0.40096552,"INCLINATION":34.5129,"SEMIMAJOR_AXIS":11146.37,"PERIOD":195.191,"APOAPSIS":9237.545,"PERIAPSIS":298.925,"BSTAR":0.00058845047,"MEAN_MOTION_DOT":6.095e-05,"REV_AT_EPOCH":39164},{"EPOCH":"2026-06-03T17:52:04.590912","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37740099,"ECCENTRICITY":0.4009669,"INCLINATION":34.5127,"SEMIMAJOR_AXIS":11146.356,"PERIOD":195.191,"APOAPSIS":9237.541,"PERIAPSIS":298.901,"BSTAR":0.00057791,"MEAN_MOTION_DOT":5.988e-05,"REV_AT_EPOCH":39165},{"EPOCH":"2026-06-03T21:07:11.847072","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37741577,"ECCENTRICITY":0.4009688,"INCLINATION":34.5126,"SEMIMAJOR_AXIS":11146.341,"PERIOD":195.19,"APOAPSIS":9237.541,"PERIAPSIS":298.871,"BSTAR":0.00056574,"MEAN_MOTION_DOT":5.864e-05,"REV_AT_EPOCH":39166},{"EPOCH":"2026-06-03T21:07:11.847936","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37741577,"ECCENTRICITY":0.40096878,"INCLINATION":34.5126,"SEMIMAJOR_AXIS":11146.341,"PERIOD":195.19,"APOAPSIS":9237.541,"PERIAPSIS":298.871,"BSTAR":0.00056573655,"MEAN_MOTION_DOT":5.864e-05,"REV_AT_EPOCH":39166},{"EPOCH":"2026-06-04T06:52:33.477312","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37746601,"ECCENTRICITY":0.4009714,"INCLINATION":34.5122,"SEMIMAJOR_AXIS":11146.291,"PERIOD":195.189,"APOAPSIS":9237.499,"PERIAPSIS":298.812,"BSTAR":0.00058408973,"MEAN_MOTION_DOT":6.059e-05,"REV_AT_EPOCH":39169},{"EPOCH":"2026-06-04T16:37:54.937344","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37750622,"ECCENTRICITY":0.40097306,"INCLINATION":34.5117,"SEMIMAJOR_AXIS":11146.25,"PERIOD":195.188,"APOAPSIS":9237.461,"PERIAPSIS":298.769,"BSTAR":0.0005456445,"MEAN_MOTION_DOT":5.663e-05,"REV_AT_EPOCH":39172},{"EPOCH":"2026-06-04T16:37:54.937344","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37750622,"ECCENTRICITY":0.4009731,"INCLINATION":34.5117,"SEMIMAJOR_AXIS":11146.25,"PERIOD":195.188,"APOAPSIS":9237.462,"PERIAPSIS":298.769,"BSTAR":0.00054564,"MEAN_MOTION_DOT":5.663e-05,"REV_AT_EPOCH":39172},{"EPOCH":"2026-06-04T19:53:02.056128","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37751789,"ECCENTRICITY":0.4009745,"INCLINATION":34.5118,"SEMIMAJOR_AXIS":11146.238,"PERIOD":195.188,"APOAPSIS":9237.461,"PERIAPSIS":298.746,"BSTAR":0.00052784,"MEAN_MOTION_DOT":5.48e-05,"REV_AT_EPOCH":39173},{"EPOCH":"2026-06-04T19:53:02.056992","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37751789,"ECCENTRICITY":0.40097447,"INCLINATION":34.5118,"SEMIMAJOR_AXIS":11146.238,"PERIOD":195.188,"APOAPSIS":9237.46,"PERIAPSIS":298.746,"BSTAR":0.00052784026,"MEAN_MOTION_DOT":5.48e-05,"REV_AT_EPOCH":39173},{"EPOCH":"2026-06-05T15:23:44.304000","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37759773,"ECCENTRICITY":0.4009785,"INCLINATION":34.5108,"SEMIMAJOR_AXIS":11146.158,"PERIOD":195.185,"APOAPSIS":9237.393,"PERIAPSIS":298.653,"BSTAR":0.00051355,"MEAN_MOTION_DOT":5.338e-05,"REV_AT_EPOCH":39179},{"EPOCH":"2026-06-05T18:38:51.263808","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37761516,"ECCENTRICITY":0.4009786,"INCLINATION":34.5109,"SEMIMAJOR_AXIS":11146.14,"PERIOD":195.185,"APOAPSIS":9237.369,"PERIAPSIS":298.642,"BSTAR":0.00054348,"MEAN_MOTION_DOT":5.65e-05,"REV_AT_EPOCH":39180},{"EPOCH":"2026-06-05T18:38:51.264672","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37761516,"ECCENTRICITY":0.40097859,"INCLINATION":34.5109,"SEMIMAJOR_AXIS":11146.14,"PERIOD":195.185,"APOAPSIS":9237.369,"PERIAPSIS":298.642,"BSTAR":0.00054348286,"MEAN_MOTION_DOT":5.65e-05,"REV_AT_EPOCH":39180},{"EPOCH":"2026-06-06T10:54:25.496064","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37772933,"ECCENTRICITY":0.4009761,"INCLINATION":34.5104,"SEMIMAJOR_AXIS":11146.025,"PERIOD":195.182,"APOAPSIS":9237.18,"PERIAPSIS":298.601,"BSTAR":0.00072703,"MEAN_MOTION_DOT":7.561e-05,"REV_AT_EPOCH":39185},{"EPOCH":"2026-06-06T14:09:32.258016","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37774742,"ECCENTRICITY":0.40097533,"INCLINATION":34.5102,"SEMIMAJOR_AXIS":11146.007,"PERIOD":195.182,"APOAPSIS":9237.146,"PERIAPSIS":298.598,"BSTAR":0.00071443184,"MEAN_MOTION_DOT":7.429e-05,"REV_AT_EPOCH":39186},{"EPOCH":"2026-06-06T20:39:45.660096","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37778706,"ECCENTRICITY":0.40097518,"INCLINATION":34.5099,"SEMIMAJOR_AXIS":11145.967,"PERIOD":195.18,"APOAPSIS":9237.089,"PERIAPSIS":298.576,"BSTAR":0.00069513661,"MEAN_MOTION_DOT":7.231e-05,"REV_AT_EPOCH":39188},{"EPOCH":"2026-06-06T20:39:45.660096","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37778706,"ECCENTRICITY":0.4009752,"INCLINATION":34.5099,"SEMIMAJOR_AXIS":11145.967,"PERIOD":195.18,"APOAPSIS":9237.089,"PERIAPSIS":298.576,"BSTAR":0.00069514,"MEAN_MOTION_DOT":7.231e-05,"REV_AT_EPOCH":39188},{"EPOCH":"2026-06-07T09:40:12.110880","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37786109,"ECCENTRICITY":0.4009718,"INCLINATION":34.5095,"SEMIMAJOR_AXIS":11145.893,"PERIOD":195.179,"APOAPSIS":9236.946,"PERIAPSIS":298.569,"BSTAR":0.00063924,"MEAN_MOTION_DOT":6.649e-05,"REV_AT_EPOCH":39192},{"EPOCH":"2026-06-07T19:25:31.681344","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37790802,"ECCENTRICITY":0.40096753,"INCLINATION":34.5092,"SEMIMAJOR_AXIS":11145.845,"PERIOD":195.177,"APOAPSIS":9236.833,"PERIAPSIS":298.588,"BSTAR":0.00058711115,"MEAN_MOTION_DOT":6.104e-05,"REV_AT_EPOCH":39195},{"EPOCH":"2026-06-07T19:25:31.681344","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37790802,"ECCENTRICITY":0.4009675,"INCLINATION":34.5092,"SEMIMAJOR_AXIS":11145.845,"PERIOD":195.177,"APOAPSIS":9236.832,"PERIAPSIS":298.589,"BSTAR":0.00058711,"MEAN_MOTION_DOT":6.104e-05,"REV_AT_EPOCH":39195},{"EPOCH":"2026-06-08T11:41:03.810624","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37798447,"ECCENTRICITY":0.4009595,"INCLINATION":34.5085,"SEMIMAJOR_AXIS":11145.768,"PERIOD":195.175,"APOAPSIS":9236.635,"PERIAPSIS":298.632,"BSTAR":0.00057748,"MEAN_MOTION_DOT":5.998e-05,"REV_AT_EPOCH":39200},{"EPOCH":"2026-06-08T11:41:03.811488","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37798447,"ECCENTRICITY":0.40095952,"INCLINATION":34.5085,"SEMIMAJOR_AXIS":11145.768,"PERIOD":195.175,"APOAPSIS":9236.635,"PERIAPSIS":298.631,"BSTAR":0.00057748307,"MEAN_MOTION_DOT":5.998e-05,"REV_AT_EPOCH":39200},{"EPOCH":"2026-06-08T18:11:16.492128","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37801694,"ECCENTRICITY":0.4009532,"INCLINATION":34.5084,"SEMIMAJOR_AXIS":11145.736,"PERIOD":195.174,"APOAPSIS":9236.519,"PERIAPSIS":298.682,"BSTAR":0.00060493,"MEAN_MOTION_DOT":6.277e-05,"REV_AT_EPOCH":39202},{"EPOCH":"2026-06-08T21:26:22.822080","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37802471,"ECCENTRICITY":0.4009508,"INCLINATION":34.5086,"SEMIMAJOR_AXIS":11145.728,"PERIOD":195.174,"APOAPSIS":9236.481,"PERIAPSIS":298.704,"BSTAR":0.00056657853,"MEAN_MOTION_DOT":5.877e-05,"REV_AT_EPOCH":39203},{"EPOCH":"2026-06-08T21:26:22.822080","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37802471,"ECCENTRICITY":0.4009508,"INCLINATION":34.5086,"SEMIMAJOR_AXIS":11145.728,"PERIOD":195.174,"APOAPSIS":9236.481,"PERIAPSIS":298.704,"BSTAR":0.00056658,"MEAN_MOTION_DOT":5.877e-05,"REV_AT_EPOCH":39203},{"EPOCH":"2026-06-09T10:26:47.822208","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37807734,"ECCENTRICITY":0.40094292,"INCLINATION":34.5079,"SEMIMAJOR_AXIS":11145.675,"PERIOD":195.173,"APOAPSIS":9236.319,"PERIAPSIS":298.76,"BSTAR":0.00052656375,"MEAN_MOTION_DOT":5.455e-05,"REV_AT_EPOCH":39207},{"EPOCH":"2026-06-09T10:26:47.822208","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37807734,"ECCENTRICITY":0.4009429,"INCLINATION":34.5079,"SEMIMAJOR_AXIS":11145.675,"PERIOD":195.173,"APOAPSIS":9236.319,"PERIAPSIS":298.761,"BSTAR":0.00052656,"MEAN_MOTION_DOT":5.455e-05,"REV_AT_EPOCH":39207},{"EPOCH":"2026-06-09T16:57:00.148608","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37811296,"ECCENTRICITY":0.40093744,"INCLINATION":34.5076,"SEMIMAJOR_AXIS":11145.639,"PERIOD":195.172,"APOAPSIS":9236.208,"PERIAPSIS":298.8,"BSTAR":0.00057103066,"MEAN_MOTION_DOT":5.912e-05,"REV_AT_EPOCH":39209},{"EPOCH":"2026-06-09T23:27:12.367008","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37814717,"ECCENTRICITY":0.4009302,"INCLINATION":34.5074,"SEMIMAJOR_AXIS":11145.605,"PERIOD":195.171,"APOAPSIS":9236.079,"PERIAPSIS":298.86,"BSTAR":0.00059141,"MEAN_MOTION_DOT":6.117e-05,"REV_AT_EPOCH":39211},{"EPOCH":"2026-06-10T05:57:24.451488","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37818343,"ECCENTRICITY":0.40092637,"INCLINATION":34.5072,"SEMIMAJOR_AXIS":11145.568,"PERIOD":195.17,"APOAPSIS":9235.985,"PERIAPSIS":298.881,"BSTAR":0.00060391256,"MEAN_MOTION_DOT":6.244e-05,"REV_AT_EPOCH":39213},{"EPOCH":"2026-06-10T09:12:30.467808","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37819761,"ECCENTRICITY":0.4009238,"INCLINATION":34.507,"SEMIMAJOR_AXIS":11145.554,"PERIOD":195.17,"APOAPSIS":9235.937,"PERIAPSIS":298.901,"BSTAR":0.00058525,"MEAN_MOTION_DOT":6.048e-05,"REV_AT_EPOCH":39214},{"EPOCH":"2026-06-10T12:27:36.454752","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37820954,"ECCENTRICITY":0.40092201,"INCLINATION":34.5065,"SEMIMAJOR_AXIS":11145.542,"PERIOD":195.169,"APOAPSIS":9235.9,"PERIAPSIS":298.914,"BSTAR":0.00054381622,"MEAN_MOTION_DOT":5.618e-05,"REV_AT_EPOCH":39215},{"EPOCH":"2026-06-11T01:28:00.009408","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37828609,"ECCENTRICITY":0.40090699,"INCLINATION":34.5062,"SEMIMAJOR_AXIS":11145.465,"PERIOD":195.167,"APOAPSIS":9235.624,"PERIAPSIS":299.035,"BSTAR":0.00057416492,"MEAN_MOTION_DOT":5.919e-05,"REV_AT_EPOCH":39219},{"EPOCH":"2026-06-11T11:13:17.562432","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37831979,"ECCENTRICITY":0.40090163,"INCLINATION":34.5059,"SEMIMAJOR_AXIS":11145.431,"PERIOD":195.166,"APOAPSIS":9235.517,"PERIAPSIS":299.074,"BSTAR":0.00054062288,"MEAN_MOTION_DOT":5.568e-05,"REV_AT_EPOCH":39222},{"EPOCH":"2026-06-11T11:13:17.562432","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37831979,"ECCENTRICITY":0.4009016,"INCLINATION":34.5059,"SEMIMAJOR_AXIS":11145.431,"PERIOD":195.166,"APOAPSIS":9235.517,"PERIAPSIS":299.075,"BSTAR":0.00054062,"MEAN_MOTION_DOT":5.568e-05,"REV_AT_EPOCH":39222},{"EPOCH":"2026-06-11T20:58:34.797504","OBJECT_NAME":"FALCON 9 R/B","OBJECT_ID":"2010-066K","NORAD_CAT_ID":37253,"LAUNCH_DATE":"2010-12-08","SITE":"AFETR","MEAN_MOTION":7.37836452,"ECCENTRICITY":0.40089227,"INCLINATION":34.5057,"SEMIMAJOR_AXIS":11145.386,"PERIOD":195.165,"APOAPSIS":9235.35,"PERIAPSIS":299.152,"BSTAR":0.00055850884,"MEAN_MOTION_DOT":5.745e-05,"REV_AT_EPOCH":39225}];
+
+// ============================================================
+//  Constants & helpers
+// ============================================================
+const MU = 398600.4418;     // km^3 / s^2
+const R_EARTH = 6378.137;   // km
+
+const fmt = (x, dp=2) => Number.isFinite(x)
+  ? x.toLocaleString(undefined, {minimumFractionDigits: dp, maximumFractionDigits: dp})
+  : '–';
+const fmtIsoDate = d => d.toISOString().slice(0,16).replace('T',' ') + ' UTC';
+const num = v => {
+  if (v === null || v === undefined || v === '') return NaN;
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  return Number.isFinite(n) ? n : NaN;
+};
+
+// ============================================================
+//  Data normalization
+// ============================================================
+//  Accepts either:
+//   - an array of OMM records
+//   - { data: [...] } / { result: [...] } (some Space-Track exports)
+function normalize(raw) {
+  let arr = raw;
+  if (!Array.isArray(arr)) {
+    if (Array.isArray(raw?.data)) arr = raw.data;
+    else if (Array.isArray(raw?.result)) arr = raw.result;
+    else throw new Error('Top-level is not an array of records.');
+  }
+  if (!arr.length) throw new Error('Empty record array.');
+
+  const required = ['EPOCH', 'SEMIMAJOR_AXIS', 'ECCENTRICITY', 'MEAN_MOTION'];
+  const missing = required.filter(k => !(k in arr[0]));
+  if (missing.length) {
+    throw new Error('Missing required field(s) on first record: ' + missing.join(', '));
+  }
+
+  const out = arr.map(r => {
+    const a  = num(r.SEMIMAJOR_AXIS);
+    const e  = num(r.ECCENTRICITY);
+    const mm = num(r.MEAN_MOTION);
+    const period = Number.isFinite(num(r.PERIOD)) ? num(r.PERIOD) : (1440 / mm); // min
+    const bstar  = Number.isFinite(num(r.BSTAR)) ? num(r.BSTAR) : 0;
+    const inc    = num(r.INCLINATION);
+    const apo_field = num(r.APOAPSIS);
+    const per_field = num(r.PERIAPSIS);
+    const apoR = a * (1 + e);
+    const perR = a * (1 - e);
+    const apo_alt = Number.isFinite(apo_field) ? apo_field : (apoR - R_EARTH);
+    const per_alt = Number.isFinite(per_field) ? per_field : (perR - R_EARTH);
+    return {
+      raw: r,
+      epoch:  new Date(String(r.EPOCH).endsWith('Z') ? r.EPOCH : r.EPOCH + 'Z'),
+      a, e,
+      mean_motion: mm,
+      period,
+      bstar,
+      inclination: inc,
+      apo_alt, per_alt,
+      epsilon: -MU / (2 * a),  // km^2/s^2 = MJ/kg
+    };
+  })
+  .filter(s => Number.isFinite(s.a) && Number.isFinite(s.e) && Number.isFinite(s.epoch.getTime()))
+  .sort((x, y) => x.epoch - y.epoch);
+
+  if (!out.length) throw new Error('No usable records after parsing.');
+  if (out.length < 2) throw new Error('Need at least 2 records to compute a delta.');
+
+  const t0 = out[0].epoch;
+  out.forEach(s => s.daysSinceStart = (s.epoch - t0) / 86400000);
+  return out;
+}
+
+// Pull metadata from first record (may be undefined for some fields).
+function metaFromRecords(arr) {
+  const r = arr[0]?.raw ?? {};
+  return {
+    name:    r.OBJECT_NAME    ?? '—',
+    norad:   r.NORAD_CAT_ID   ?? '—',
+    cospar:  r.OBJECT_ID      ?? '—',
+    site:    r.SITE           ?? '—',
+    launch:  r.LAUNCH_DATE    ?? '—',
+  };
+}
+
+// ============================================================
+//  Loss calculation
+// ============================================================
+function computeLoss(series, mass) {
+  const first = series[0], last = series[series.length - 1];
+  const dtDays = (last.epoch - first.epoch) / 86400000;
+
+  const da_km        = first.a - last.a;
+  const dapo_km      = first.apo_alt - last.apo_alt;
+  const dper_km      = first.per_alt - last.per_alt;
+  const dperiod_min  = first.period - last.period;
+
+  const eps0 = first.epsilon, eps1 = last.epsilon;
+  const dEps_km2_s2  = eps1 - eps0;          // negative if energy lost
+  const energyLost_MJperkg = Math.abs(dEps_km2_s2);  // km^2/s^2 ≡ MJ/kg
+  const energyLost_kJperkg = energyLost_MJperkg * 1000;
+
+  const mNominal = Math.max(1, mass || 0);
+  const mLow     = mNominal * 0.8;
+  const mHigh    = mNominal * 1.2;
+  const energy_MJ_lo  = mLow     * energyLost_MJperkg;
+  const energy_MJ     = mNominal * energyLost_MJperkg;
+  const energy_MJ_hi  = mHigh    * energyLost_MJperkg;
+  const energy_kWh    = energy_MJ * (1e3 / 3600);
+
+  const seconds = dtDays * 86400;
+  const power_perkg_mW = (energyLost_MJperkg * 1e6 / seconds) * 1000;  // mW/kg
+  const power_W        = (energy_MJ * 1e6 / seconds);                   // W (chosen mass)
+
+  // Cross-check: Δa via Kepler III from mean motion (rev/day → rad/s)
+  const n0 = first.mean_motion * 2 * Math.PI / 86400;
+  const n1 = last.mean_motion  * 2 * Math.PI / 86400;
+  const aFromN0 = Math.cbrt(MU / (n0 * n0));
+  const aFromN1 = Math.cbrt(MU / (n1 * n1));
+  const da_kepler_m = (aFromN0 - aFromN1) * 1000;
+
+  return {
+    dtDays, da_km, dapo_km, dper_km, dperiod_min,
+    eps0, eps1, dEps_km2_s2,
+    energyLost_kJperkg, energyLost_MJperkg,
+    mLow, mNominal, mHigh,
+    energy_MJ_lo, energy_MJ, energy_MJ_hi, energy_kWh,
+    power_perkg_mW, power_W,
+    da_kepler_m,
+  };
+}
+
+// ============================================================
+//  Charting
+// ============================================================
+Chart.defaults.color = '#8d9bb5';
+Chart.defaults.font.family = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+Chart.defaults.font.size = 11;
+Chart.defaults.borderColor = '#1e2640';
+Chart.defaults.elements.point.radius = 0;
+Chart.defaults.elements.point.hoverRadius = 4;
+Chart.defaults.elements.line.borderWidth = 2;
+
+const charts = {};                // canvasId -> Chart instance
+const epochs = { current: [] };   // shared so tooltip can show epoch labels
+
+function destroyCharts() {
+  for (const k of Object.keys(charts)) {
+    try { charts[k].destroy(); } catch {}
+    delete charts[k];
+  }
+}
+
+function makeLineChart(canvasId, datasets, yTitle, opts = {}) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  const xs = datasets[0]?.data?.length ? datasets[0].data.map((_, i) => i) : [];
+  // We use linear x of "days since start" instead — caller passes labels via xValues
+  charts[canvasId] = new Chart(ctx, {
+    type: 'line',
+    data: { labels: opts.xValues ?? xs, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: {
+        legend: { labels: { boxWidth: 10, boxHeight: 10 } },
+        tooltip: {
+          callbacks: {
+            title: (items) => {
+              const i = items[0].dataIndex;
+              const d = epochs.current[i];
+              return d ? fmtIsoDate(d) : '';
+            },
+            label: (ctxItem) =>
+              ` ${ctxItem.dataset.label}: ${ctxItem.parsed.y.toFixed(opts.dp ?? 3)} ${opts.unit ?? ''}`,
+          },
+          backgroundColor: '#0b1224', borderColor: '#1e2640', borderWidth: 1,
+        },
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          title: { display: true, text: 'Days since first epoch' },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+        },
+        y: {
+          title: { display: true, text: yTitle },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ...(opts.yScale || {}),
+        },
+      },
+    },
+  });
+  return charts[canvasId];
+}
+
+function buildAllCharts(series) {
+  const xs = series.map(s => s.daysSinceStart);
+  epochs.current = series.map(s => s.epoch);
+
+  // Apo / Peri  (dual axis)
+  const altCtx = document.getElementById('ch_alt').getContext('2d');
+  charts.ch_alt = new Chart(altCtx, {
+    type: 'line',
+    data: {
+      labels: xs,
+      datasets: [
+        { label: 'Apogee altitude (km)',  yAxisID: 'y',
+          data: series.map(s => s.apo_alt),
+          borderColor: '#ff8a3d', backgroundColor: 'rgba(255,138,61,0.12)', tension: 0.15 },
+        { label: 'Perigee altitude (km)', yAxisID: 'y2',
+          data: series.map(s => s.per_alt),
+          borderColor: '#4fc3f7', backgroundColor: 'rgba(79,195,247,0.10)', tension: 0.15 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: {
+        legend: { labels: { boxWidth: 10, boxHeight: 10 } },
+        tooltip: {
+          callbacks: {
+            title: (items) => {
+              const d = epochs.current[items[0].dataIndex];
+              return d ? fmtIsoDate(d) : '';
+            },
+            label: (i) => ` ${i.dataset.label}: ${i.parsed.y.toFixed(2)} km`,
+          },
+          backgroundColor: '#0b1224', borderColor: '#1e2640', borderWidth: 1,
+        },
+      },
+      scales: {
+        x: { type: 'linear', title: { display: true, text: 'Days since first epoch' },
+             grid: { color: 'rgba(255,255,255,0.04)' } },
+        y:  { type: 'linear', position: 'left',  title: { display: true, text: 'Apogee altitude (km)' },
+              grid: { color: 'rgba(255,255,255,0.04)' } },
+        y2: { type: 'linear', position: 'right', title: { display: true, text: 'Perigee altitude (km)' },
+              grid: { drawOnChartArea: false } },
+      },
+    },
+  });
+
+  makeLineChart('ch_a', [
+    { label: 'Semi-major axis a (km)', data: series.map(s => s.a),
+      borderColor: '#ff8a3d', backgroundColor: 'rgba(255,138,61,0.12)', tension: 0.15 },
+  ], 'a (km)', { dp: 3, unit: 'km', xValues: xs });
+
+  makeLineChart('ch_e', [
+    { label: 'Eccentricity e', data: series.map(s => s.e),
+      borderColor: '#6ddfa1', backgroundColor: 'rgba(109,223,161,0.10)', tension: 0.15 },
+  ], 'e', { dp: 6, unit: '', xValues: xs });
+
+  makeLineChart('ch_period', [
+    { label: 'Period (min)', data: series.map(s => s.period),
+      borderColor: '#ffb84d', backgroundColor: 'rgba(255,184,77,0.12)', tension: 0.15 },
+  ], 'Period (min)', { dp: 3, unit: 'min', xValues: xs });
+
+  makeLineChart('ch_energy', [
+    { label: 'ε  (MJ kg⁻¹)', data: series.map(s => s.epsilon),
+      borderColor: '#ff6e6e', backgroundColor: 'rgba(255,110,110,0.12)', tension: 0.15 },
+  ], 'Specific energy ε (MJ/kg)', { dp: 5, unit: 'MJ/kg', xValues: xs });
+
+  makeLineChart('ch_bstar', [
+    { label: 'BSTAR (1/Earth radius)', data: series.map(s => s.bstar),
+      borderColor: '#b388ff', backgroundColor: 'rgba(179,136,255,0.12)', tension: 0.15 },
+  ], 'BSTAR', { dp: 6, unit: '', xValues: xs });
+}
+
+// ============================================================
+//  Numeric panel rendering
+// ============================================================
+function renderText(series, mass) {
+  const meta = metaFromRecords(series);
+  const loss = computeLoss(series, mass);
+  const t0 = series[0].epoch;
+  const tN = series[series.length - 1].epoch;
+
+  // Title block
+  document.getElementById('m_title').textContent =
+    `Atmospheric decay: ${meta.name}` + (meta.norad !== '—' ? ` (NORAD ${meta.norad})` : '');
+  document.getElementById('m_eyebrow').textContent =
+    `Atmospheric Decay · ${meta.name}` + (meta.cospar !== '—' ? ` · ${meta.cospar}` : '');
+  document.title = `Decay: ${meta.name}`;
+
+  document.getElementById('m_name').textContent   = meta.name;
+  document.getElementById('m_norad').textContent  = meta.norad;
+  document.getElementById('m_cospar').textContent = meta.cospar;
+  document.getElementById('m_site').textContent   = meta.site;
+  document.getElementById('m_launch').textContent = meta.launch;
+  document.getElementById('m_count').textContent  = `${series.length} OMM`;
+  document.getElementById('m_span').textContent   = `${fmtIsoDate(t0)} → ${fmtIsoDate(tN)}`;
+  document.getElementById('m_inc').textContent    =
+    Number.isFinite(series[0].inclination) ? `${series[0].inclination.toFixed(3)}°` : '—';
+  document.getElementById('m_days').textContent   = `${loss.dtDays.toFixed(2)} days`;
+
+  // Hero numbers
+  document.getElementById('hero_eperkg').innerHTML =
+    `${fmt(loss.energyLost_kJperkg, 2)} <small>kJ kg<sup>-1</sup></small>`;
+  document.getElementById('hero_da').textContent      = `${fmt(loss.da_km, 3)} km`;
+  document.getElementById('hero_dapo').textContent    = `${fmt(loss.dapo_km, 3)} km`;
+  document.getElementById('hero_dper').textContent    =
+    Math.abs(loss.dper_km) < 1
+      ? `${fmt(loss.dper_km * 1000, 1)} m`
+      : `${fmt(loss.dper_km, 3)} km`;
+  const dpsign = loss.dperiod_min >= 0 ? '−' : '+';   // positive Δperiod = decrease shown as -secs
+  document.getElementById('hero_dperiod').textContent = `${dpsign}${fmt(Math.abs(loss.dperiod_min) * 60, 2)} s`;
+  document.getElementById('hero_etot').textContent    = `${fmt(loss.energy_MJ, 2)} MJ`;
+  document.getElementById('hero_pwr').textContent     = `${fmt(loss.power_W, 2)} W`;
+  document.getElementById('hero_mass_label').textContent = mass.toLocaleString();
+
+  // Computation panel
+  document.getElementById('t_eps0').textContent = fmt(loss.eps0, 4);
+  document.getElementById('t_eps1').textContent = fmt(loss.eps1, 4);
+  document.getElementById('t_deps').textContent = `−${fmt(loss.energyLost_kJperkg, 3)}`;
+
+  document.getElementById('t_m_lo').textContent  = fmt(loss.mLow, 0);
+  document.getElementById('t_m_nom').textContent = fmt(loss.mNominal, 0);
+  document.getElementById('t_m_hi').textContent  = fmt(loss.mHigh, 0);
+  document.getElementById('t_etot_lo').textContent = fmt(loss.energy_MJ_lo, 2);
+  document.getElementById('t_etot').textContent    = fmt(loss.energy_MJ, 2);
+  document.getElementById('t_etot_hi').textContent = fmt(loss.energy_MJ_hi, 2);
+  document.getElementById('t_kwh').textContent     = fmt(loss.energy_kWh, 3);
+
+  document.getElementById('t_dt').textContent  = fmt(loss.dtDays, 3);
+  document.getElementById('t_pkg').textContent = fmt(loss.power_perkg_mW, 3);
+  document.getElementById('t_pwr').textContent = fmt(loss.power_W, 3);
+
+  document.getElementById('t_dakep').textContent = fmt(loss.da_kepler_m, 1);
+  document.getElementById('t_dadir').textContent = fmt(loss.da_km * 1000, 1);
+
+  const ratio = Math.abs(loss.dapo_km) / Math.max(Math.abs(loss.dper_km), 1e-6);
+  document.getElementById('t_apratio').textContent = fmt(ratio, 1);
+  let signature;
+  if (loss.da_km <= 0) {
+    signature = `Δa ≤ 0 — apparent <b>energy gain</b> over this window. Likely a re-fit, station-keeping burn, or boost; not drag.`;
+  } else if (Math.abs(loss.dper_km) < 0.05 && Math.abs(loss.dapo_km) > 0.5) {
+    signature = `apogee falling ≈ <b>${ratio.toFixed(0)}×</b> faster than perigee → orbit is <b>circularizing</b>, the canonical drag fingerprint`;
+  } else {
+    signature = `apogee Δ ${fmt(loss.dapo_km*1000,0)} m vs. perigee Δ ${fmt(loss.dper_km*1000,0)} m`;
+  }
+  document.getElementById('t_signature').innerHTML = signature;
+}
+
+// ============================================================
+//  Load + render orchestration
+// ============================================================
+let currentSeries = null;
+let currentMass = 3900;
+
+function renderAll(series) {
+  destroyCharts();
+  buildAllCharts(series);
+  renderText(series, currentMass);
+
+  const rng = document.getElementById('rng');
+  rng.max = String(series.length - 1);
+  rng.value = String(series.length - 1);
+  paintEpoch(series.length - 1);
+}
+
+function paintEpoch(i) {
+  const s = currentSeries[i];
+  if (!s) return;
+  document.getElementById('epoch_label').textContent =
+    `${fmtIsoDate(s.epoch)} · a=${s.a.toFixed(3)} km · ε=${s.epsilon.toFixed(4)} MJ/kg`;
+}
+
+function setLoaderState(html, isError = false) {
+  const el = document.getElementById('loader_state');
+  el.className = isError ? 'err' : '';
+  el.innerHTML = html;
+}
+
+async function loadFromFile(file) {
+  if (!file) return;
+  setLoaderState(`Reading <b>${file.name}</b>…`);
+  try {
+    const text  = await file.text();
+    const json  = JSON.parse(text);
+    const series = normalize(json);
+    currentSeries = series;
+    renderAll(series);
+    const meta = metaFromRecords(series);
+    setLoaderState(
+      `Loaded <b>${file.name}</b> · ${series.length} records · ` +
+      `${meta.name}${meta.norad !== '—' ? ` (NORAD ${meta.norad})` : ''}.`
+    );
+  } catch (err) {
+    setLoaderState(`<span class="err">Failed to load: ${err.message}</span>`, true);
+    console.error(err);
+  }
+}
+
+function loadDemo() {
+  try {
+    currentSeries = normalize(DEMO_RECORDS);
+    renderAll(currentSeries);
+    setLoaderState('Showing demo: <b>COTS-1 Falcon 9 R/B (NORAD 37253)</b>. Drop a JSON to load your own.');
+  } catch (err) {
+    setLoaderState(`<span class="err">Demo failed: ${err.message}</span>`, true);
+    console.error(err);
+  }
+}
+
+// ============================================================
+//  Wire up UI
+// ============================================================
+document.getElementById('file_input').addEventListener('change', (e) => {
+  const f = e.target.files?.[0];
+  loadFromFile(f);
+});
+document.getElementById('reset_btn').addEventListener('click', loadDemo);
+
+document.getElementById('mass_input').addEventListener('change', (e) => {
+  const m = parseFloat(e.target.value);
+  if (Number.isFinite(m) && m > 0) {
+    currentMass = m;
+    if (currentSeries) renderText(currentSeries, currentMass);
+  }
+});
+document.getElementById('mass_input').addEventListener('input', (e) => {
+  const m = parseFloat(e.target.value);
+  if (Number.isFinite(m) && m > 0) {
+    currentMass = m;
+    if (currentSeries) renderText(currentSeries, currentMass);
+  }
+});
+
+// Drag-and-drop on the entire page
+const loaderEl = document.getElementById('loader');
+['dragenter','dragover'].forEach(ev =>
+  document.addEventListener(ev, (e) => {
+    if (!e.dataTransfer?.types?.includes('Files')) return;
+    e.preventDefault();
+    loaderEl.classList.add('dragover');
+  })
+);
+['dragleave','dragend','drop'].forEach(ev =>
+  document.addEventListener(ev, (e) => {
+    if (e.type === 'drop') e.preventDefault();
+    loaderEl.classList.remove('dragover');
+  })
+);
+document.addEventListener('drop', (e) => {
+  const f = e.dataTransfer?.files?.[0];
+  if (f) loadFromFile(f);
+});
+
+document.getElementById('rng').addEventListener('input', (e) => {
+  paintEpoch(parseInt(e.target.value, 10));
+});
+
+// ---- Boot ----
+loadDemo();
+</script>
+</body>
+</html>
